@@ -1,0 +1,19 @@
+-------------------- <A: void <init>()> (cg) --------------------
+[0@L9] invokespecial %this.<java.lang.Object: void <init>()>(); [<java.lang.Object: void <init>()>]
+
+-------------------- <B: void <init>()> (cg) --------------------
+[0@L14] invokespecial %this.<A: void <init>()>(); [<A: void <init>()>]
+
+-------------------- <C: void <init>()> (cg) --------------------
+[0@L17] invokespecial %this.<B: void <init>()>(); [<B: void <init>()>]
+
+-------------------- <D: void <init>()> (cg) --------------------
+[0@L22] invokespecial %this.<B: void <init>()>(); [<B: void <init>()>]
+
+-------------------- <D: void foo()> (cg) --------------------
+[1@L24] invokespecial temp$0.<C: void <init>()>(); [<C: void <init>()>]
+[3@L25] invokevirtual c.<C: void foo()>(); [<C: void foo()>]
+
+-------------------- <VirtualCall2: void main(java.lang.String[])> (cg) --------------------
+[1@L4] invokespecial temp$0.<D: void <init>()>(); [<D: void <init>()>]
+[3@L5] invokevirtual b.<B: void foo()>(); [<C: void foo()>, <D: void foo()>]
