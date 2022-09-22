@@ -22,90 +22,43 @@
 
 package pascal.taie.analysis.graph.callgraph;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import pascal.taie.World;
 import pascal.taie.ir.exp.NewExp;
 import pascal.taie.ir.exp.NewInstance;
-import pascal.taie.ir.proginfo.MemberRef;
 import pascal.taie.ir.proginfo.MethodRef;
 import pascal.taie.ir.stmt.Invoke;
 import pascal.taie.ir.stmt.New;
-import pascal.taie.language.classes.ClassHierarchy;
 import pascal.taie.language.classes.JClass;
 import pascal.taie.language.classes.JMethod;
-import pascal.taie.util.AnalysisException;
 import pascal.taie.util.collection.Maps;
 import pascal.taie.util.collection.Pair;
 import pascal.taie.util.collection.Sets;
-import pascal.taie.util.collection.TwoKeyMap;
 
-import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Queue;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-public class RTABuilder implements CGBuilder<Invoke, JMethod> {
+public class RTABuilder extends PropagationBasedBuilder {
 
-    private static final Logger logger = LogManager.getLogger(RTABuilder.class);
-
-    private DefaultCallGraph callGraph;
-
-    private ClassHierarchy hierarchy;
-    /**
-     * Cache resolve results for interface/virtual invocations.
-     */
-    private TwoKeyMap<JClass, MemberRef, Set<JMethod>> resolveTable;
     private Set<JClass> instantiatedClasses;
     private Map<JClass, Set<Pair<Invoke, JMethod>>> pending;
 
-    private Queue<JMethod> workList;
-
     @Override
-    public CallGraph<Invoke, JMethod> build() {
-        return buildCallGraph(World.get().getMainMethod());
-    }
-
-    private CallGraph<Invoke, JMethod> buildCallGraph(JMethod entry) {
-        callGraph = new DefaultCallGraph();
-        callGraph.addEntryMethod(entry);
-
-        hierarchy = World.get().getClassHierarchy();
-        resolveTable = Maps.newTwoKeyMap();
+    protected void customInit() {
         instantiatedClasses = Sets.newSet();
         pending = Maps.newMap();
-
-        workList = new ArrayDeque<>();
-        workList.add(entry);
-        while (!workList.isEmpty()) {
-            JMethod method = workList.poll();
-            callGraph.addReachableMethod(method);
-            processMethod(method);
-        }
-        return callGraph;
     }
 
-    private void processMethod(JMethod method) {
+    @Override
+    protected void propagateMethod(JMethod method) {
         method.getIR().forEach(stmt -> {
             if (stmt instanceof New newStmt) {
                 processNewStmt(newStmt);
             }
         });
         callGraph.getCallSitesIn(method).forEach(this::processCallSite);
-    }
-
-    private void processCallSite(Invoke callSite) {
-        resolveCalleesOf(callSite).forEach(callee -> {
-            if (!callGraph.contains(callee)) {
-                workList.add(callee);
-            }
-            callGraph.addEdge(new Edge<>(
-                    CallGraphs.getCallKind(callSite), callSite, callee));
-        });
     }
 
     private void processNewStmt(New stmt) {
@@ -120,56 +73,44 @@ public class RTABuilder implements CGBuilder<Invoke, JMethod> {
     }
 
     private void resolvePending(JClass jClass) {
-        if (pending.containsKey(jClass)) {
-            for (Pair<Invoke, JMethod> pair : pending.get(jClass)) {
-                // update callGraph by adding new edge
-                Invoke invoke = pair.first();
-                JMethod method = pair.second();
-                callGraph.addEdge(new Edge<>(CallGraphs.getCallKind(invoke), invoke, method));
-                // update resolveTable by adding new cache
-                MethodRef methodRef = invoke.getMethodRef();
-                JClass cls = methodRef.getDeclaringClass();
-                resolveTable.computeIfAbsent(cls, methodRef, (c, m) -> Sets.newSet()).add(method);
-            }
-        }
+        pending.getOrDefault(jClass, Set.of()).forEach(pair -> {
+            // update callGraph by adding new edge
+            Invoke invoke = pair.first();
+            JMethod callee = pair.second();
+            callGraph.addEdge(new Edge<>(CallGraphs.getCallKind(invoke), invoke, callee));
+            // update resolveTable by updating cache
+            addCGEdge(invoke, callee);
+            MethodRef methodRef = invoke.getMethodRef();
+            JClass cls = methodRef.getDeclaringClass();
+            resolveTable.computeIfAbsent(cls, methodRef, (c, m) -> Sets.newSet()).add(callee);
+        });
     }
 
-    private Set<JMethod> resolveCalleesOf(Invoke callSite) {
-        CallKind kind = CallGraphs.getCallKind(callSite);
-        return switch (kind) {
-            case INTERFACE, VIRTUAL -> {
-                MethodRef methodRef = callSite.getMethodRef();
-                JClass cls = methodRef.getDeclaringClass();
-                Set<JMethod> callees = resolveTable.get(cls, methodRef);
-                if (callees == null) {
-                    List<JClass> classes = hierarchy.getAllSubclassesOf(cls)
-                            .stream()
-                            .filter(Predicate.not(JClass::isAbstract))
-                            .toList();
-                    classes.stream()
-                            .filter(Predicate.not(instantiatedClasses::contains))
-                            .forEach(c -> {
-                                JMethod method = hierarchy.dispatch(c, methodRef);
-                                Pair<Invoke, JMethod> pair = new Pair<>(callSite, method);
-                                pending.computeIfAbsent(c, k -> Sets.newSet()).add(pair);
-                            });
-                    callees = classes.stream()
-                            .filter(instantiatedClasses::contains)
-                            .map(c -> hierarchy.dispatch(c, methodRef))
-                            .filter(Objects::nonNull) // filter out null callees
-                            .collect(Collectors.toSet());
-                    resolveTable.put(cls, methodRef, callees);
-                }
-                yield callees;
-            }
-            case SPECIAL, STATIC -> Set.of(callSite.getMethodRef().resolve());
-            case DYNAMIC -> {
-                logger.debug("RTA cannot resolve invokedynamic " + callSite);
-                yield Set.of();
-            }
-            default -> throw new AnalysisException(
-                    "Failed to resolve call site: " + callSite);
-        };
+    @Override
+    protected Set<JMethod> resolveVirtualCalleesOf(Invoke callSite) {
+        MethodRef methodRef = callSite.getMethodRef();
+        JClass cls = methodRef.getDeclaringClass();
+        Set<JMethod> callees = resolveTable.get(cls, methodRef);
+        if (callees == null) {
+            List<JClass> classes = hierarchy.getAllSubclassesOf(cls)
+                    .stream()
+                    .filter(Predicate.not(JClass::isAbstract))
+                    .toList();
+            classes.stream()
+                    .filter(Predicate.not(instantiatedClasses::contains))
+                    .forEach(c -> {
+                        JMethod method = hierarchy.dispatch(c, methodRef);
+                        var pair = new Pair<>(callSite, method);
+                        pending.computeIfAbsent(c, k -> Sets.newSet()).add(pair);
+                    });
+            callees = classes.stream()
+                    .filter(instantiatedClasses::contains)
+                    .map(c -> hierarchy.dispatch(c, methodRef))
+                    .filter(Objects::nonNull) // filter out null callees
+                    .collect(Collectors.toSet());
+            resolveTable.put(cls, methodRef, callees);
+        }
+        return callees;
     }
 
 }
