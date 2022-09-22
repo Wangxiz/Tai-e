@@ -13,8 +13,10 @@ import pascal.taie.util.collection.Maps;
 import pascal.taie.util.collection.TwoKeyMap;
 
 import java.util.ArrayDeque;
+import java.util.List;
 import java.util.Queue;
 import java.util.Set;
+import java.util.function.Predicate;
 
 public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMethod> {
 
@@ -82,6 +84,20 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
             default -> throw new AnalysisException(
                     "Failed to resolve call site: " + callSite);
         };
+    }
+
+    protected List<JClass> getAllSubclassesOf(JClass cls) {
+        return hierarchy.getAllSubclassesOf(cls)
+                .stream()
+                .filter(Predicate.not(JClass::isAbstract))
+                .toList();
+    }
+
+    protected List<JClass> getAllSubclassesOf(List<JClass> classes) {
+        return classes.stream()
+                .map(this::getAllSubclassesOf)
+                .flatMap(List::stream)
+                .toList();
     }
 
 }

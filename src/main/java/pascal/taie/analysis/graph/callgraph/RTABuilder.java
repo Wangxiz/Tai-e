@@ -30,25 +30,28 @@ import pascal.taie.ir.stmt.New;
 import pascal.taie.language.classes.JClass;
 import pascal.taie.language.classes.JMethod;
 import pascal.taie.util.collection.Maps;
+import pascal.taie.util.collection.MultiMap;
 import pascal.taie.util.collection.Pair;
 import pascal.taie.util.collection.Sets;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+/**
+ * Builds call graph via rapid type analysis.
+ */
 public class RTABuilder extends PropagationBasedBuilder {
 
     private Set<JClass> instantiatedClasses;
-    private Map<JClass, Set<Pair<Invoke, JMethod>>> pending;
+    private MultiMap<JClass, Pair<Invoke, JMethod>> pending;
 
     @Override
     protected void customInit() {
         instantiatedClasses = Sets.newSet();
-        pending = Maps.newMap();
+        pending = Maps.newMultiMap();
     }
 
     @Override
@@ -73,7 +76,7 @@ public class RTABuilder extends PropagationBasedBuilder {
     }
 
     private void resolvePending(JClass jClass) {
-        pending.getOrDefault(jClass, Set.of()).forEach(pair -> {
+        pending.get(jClass).forEach(pair -> {
             // update callGraph by adding new edge
             Invoke invoke = pair.first();
             JMethod callee = pair.second();
@@ -92,16 +95,14 @@ public class RTABuilder extends PropagationBasedBuilder {
         JClass cls = methodRef.getDeclaringClass();
         Set<JMethod> callees = resolveTable.get(cls, methodRef);
         if (callees == null) {
-            List<JClass> classes = hierarchy.getAllSubclassesOf(cls)
-                    .stream()
-                    .filter(Predicate.not(JClass::isAbstract))
-                    .toList();
+            List<JClass> classes = getAllSubclassesOf(cls);
             classes.stream()
                     .filter(Predicate.not(instantiatedClasses::contains))
                     .forEach(c -> {
                         JMethod method = hierarchy.dispatch(c, methodRef);
-                        var pair = new Pair<>(callSite, method);
-                        pending.computeIfAbsent(c, k -> Sets.newSet()).add(pair);
+                        if (Objects.nonNull(method)) {
+                            pending.put(c, new Pair<>(callSite, method));
+                        }
                     });
             callees = classes.stream()
                     .filter(instantiatedClasses::contains)

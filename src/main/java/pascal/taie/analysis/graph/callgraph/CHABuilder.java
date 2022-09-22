@@ -29,7 +29,6 @@ import pascal.taie.language.classes.JMethod;
 
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -51,9 +50,8 @@ class CHABuilder extends PropagationBasedBuilder {
         JClass cls = methodRef.getDeclaringClass();
         Set<JMethod> callees = resolveTable.get(cls, methodRef);
         if (callees == null) {
-            callees = hierarchy.getAllSubclassesOf(cls)
+            callees = getAllSubclassesOf(cls)
                     .stream()
-                    .filter(Predicate.not(JClass::isAbstract))
                     .map(c -> hierarchy.dispatch(c, methodRef))
                     .filter(Objects::nonNull) // filter out null callees
                     .collect(Collectors.toUnmodifiableSet());
