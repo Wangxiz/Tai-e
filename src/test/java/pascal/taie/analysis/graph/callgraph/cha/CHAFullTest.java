@@ -20,30 +20,15 @@
  * License along with Tai-e. If not, see <https://www.gnu.org/licenses/>.
  */
 
-package pascal.taie.analysis.graph.callgraph.rta;
+package pascal.taie.analysis.graph.callgraph.cha;
 
 import org.junit.Test;
 
-public class RTATestFull extends RTATest {
-
-    @Test
-    public void testRTATest1() {
-        test("RTATest1");
-    }
-
-    @Test
-    public void testRTATest2() {
-        test("RTATest2");
-    }
+public class CHAFullTest extends CHATest {
 
     @Test
     public void testSpecialCall() {
         test("SpecialCall");
-    }
-
-    @Test
-    public void testVirtualCall2() {
-        test("VirtualCall2");
     }
 
     @Test

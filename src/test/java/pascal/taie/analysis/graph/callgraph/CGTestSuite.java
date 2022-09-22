@@ -20,44 +20,17 @@
  * License along with Tai-e. If not, see <https://www.gnu.org/licenses/>.
  */
 
-package pascal.taie.analysis.graph.callgraph.cha;
+package pascal.taie.analysis.graph.callgraph;
 
-import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Suite;
+import pascal.taie.analysis.graph.callgraph.cha.CHAFullTest;
+import pascal.taie.analysis.graph.callgraph.rta.RTAFullTest;
 
-public class CHATestFull extends CHATest {
-
-    @Test
-    public void testSpecialCall() {
-        test("SpecialCall");
-    }
-
-    @Test
-    public void testInterface2() {
-        test("Interface2");
-    }
-
-    @Test
-    public void testInterface3() {
-        test("Interface3");
-    }
-
-    @Test
-    public void testRecursion() {
-        test("Recursion");
-    }
-
-    @Test
-    public void testRecursion2() {
-        test("Recursion2");
-    }
-
-    @Test
-    public void testMaxPQ() {
-        test("MaxPQ");
-    }
-
-    @Test
-    public void testLongCallChain() {
-        test("LongCallChain");
-    }
+@RunWith(Suite.class)
+@Suite.SuiteClasses({
+        CHAFullTest.class,
+        RTAFullTest.class,
+})
+public class CGTestSuite {
 }
