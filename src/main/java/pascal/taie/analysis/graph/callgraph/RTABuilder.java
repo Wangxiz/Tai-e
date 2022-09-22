@@ -25,20 +25,15 @@ package pascal.taie.analysis.graph.callgraph;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import pascal.taie.World;
-import pascal.taie.ir.exp.NewArray;
 import pascal.taie.ir.exp.NewExp;
 import pascal.taie.ir.exp.NewInstance;
-import pascal.taie.ir.exp.NewMultiArray;
 import pascal.taie.ir.proginfo.MemberRef;
 import pascal.taie.ir.proginfo.MethodRef;
 import pascal.taie.ir.stmt.Invoke;
 import pascal.taie.ir.stmt.New;
-import pascal.taie.ir.stmt.Stmt;
 import pascal.taie.language.classes.ClassHierarchy;
 import pascal.taie.language.classes.JClass;
 import pascal.taie.language.classes.JMethod;
-import pascal.taie.language.type.ClassType;
-import pascal.taie.language.type.Type;
 import pascal.taie.util.AnalysisException;
 import pascal.taie.util.collection.Maps;
 import pascal.taie.util.collection.Pair;
@@ -58,6 +53,8 @@ public class RTABuilder implements CGBuilder<Invoke, JMethod> {
 
     private static final Logger logger = LogManager.getLogger(RTABuilder.class);
 
+    private DefaultCallGraph callGraph;
+
     private ClassHierarchy hierarchy;
     /**
      * Cache resolve results for interface/virtual invocations.
@@ -66,7 +63,7 @@ public class RTABuilder implements CGBuilder<Invoke, JMethod> {
     private Set<JClass> instantiatedClasses;
     private Map<JClass, Set<Pair<Invoke, JMethod>>> pending;
 
-    private DefaultCallGraph callGraph;
+    private Queue<JMethod> workList;
 
     @Override
     public CallGraph<Invoke, JMethod> build() {
@@ -74,54 +71,47 @@ public class RTABuilder implements CGBuilder<Invoke, JMethod> {
     }
 
     private CallGraph<Invoke, JMethod> buildCallGraph(JMethod entry) {
+        callGraph = new DefaultCallGraph();
+        callGraph.addEntryMethod(entry);
+
         hierarchy = World.get().getClassHierarchy();
         resolveTable = Maps.newTwoKeyMap();
         instantiatedClasses = Sets.newSet();
         pending = Maps.newMap();
 
-        callGraph = new DefaultCallGraph();
-        callGraph.addEntryMethod(entry);
-        Queue<JMethod> workList = new ArrayDeque<>();
+        workList = new ArrayDeque<>();
         workList.add(entry);
         while (!workList.isEmpty()) {
             JMethod method = workList.poll();
             callGraph.addReachableMethod(method);
-            method.getIR().stmts()
-                    .filter(stmt -> stmt instanceof New)
-                    .forEach(this::processNewStmt);
-            callGraph.callSitesIn(method).forEach(invoke -> {
-                Set<JMethod> callees = resolveCalleesOf(invoke);
-                callees.forEach(callee -> {
-                    if (!callGraph.contains(callee)) {
-                        workList.add(callee);
-                    }
-                    callGraph.addEdge(new Edge<>(
-                            CallGraphs.getCallKind(invoke), invoke, callee));
-                });
-            });
+            processMethod(method);
         }
         return callGraph;
     }
 
-    private void processNewStmt(Stmt stmt) {
-        NewExp newExp = ((New) stmt).getRValue();
-        JClass jClass = null;
+    private void processMethod(JMethod method) {
+        method.getIR().forEach(stmt -> {
+            if (stmt instanceof New newStmt) {
+                processNewStmt(newStmt);
+            }
+        });
+        callGraph.getCallSitesIn(method).forEach(this::processCallSite);
+    }
 
+    private void processCallSite(Invoke callSite) {
+        resolveCalleesOf(callSite).forEach(callee -> {
+            if (!callGraph.contains(callee)) {
+                workList.add(callee);
+            }
+            callGraph.addEdge(new Edge<>(
+                    CallGraphs.getCallKind(callSite), callSite, callee));
+        });
+    }
+
+    private void processNewStmt(New stmt) {
+        NewExp newExp = stmt.getRValue();
         if (newExp instanceof NewInstance newInstance) {
-            jClass = newInstance.getType().getJClass();
-        } else if (newExp instanceof NewArray newArray) {
-            Type baseType = newArray.getType().baseType();
-            if (baseType instanceof ClassType classType) {
-                jClass = classType.getJClass();
-            }
-        } else if (newExp instanceof NewMultiArray newMultiArray) {
-            Type baseType = newMultiArray.getType().baseType();
-            if (baseType instanceof ClassType classType) {
-                jClass = classType.getJClass();
-            }
-        }
-
-        if (jClass != null) {
+            JClass jClass = newInstance.getType().getJClass();
             if (!instantiatedClasses.contains(jClass)) {
                 instantiatedClasses.add(jClass);
                 resolvePending(jClass);
@@ -132,9 +122,11 @@ public class RTABuilder implements CGBuilder<Invoke, JMethod> {
     private void resolvePending(JClass jClass) {
         if (pending.containsKey(jClass)) {
             for (Pair<Invoke, JMethod> pair : pending.get(jClass)) {
+                // update callGraph by adding new edge
                 Invoke invoke = pair.first();
                 JMethod method = pair.second();
                 callGraph.addEdge(new Edge<>(CallGraphs.getCallKind(invoke), invoke, method));
+                // update resolveTable by adding new cache
                 MethodRef methodRef = invoke.getMethodRef();
                 JClass cls = methodRef.getDeclaringClass();
                 resolveTable.computeIfAbsent(cls, methodRef, (c, m) -> Sets.newSet()).add(method);
