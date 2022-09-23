@@ -50,6 +50,7 @@ public class CallGraphBuilder extends ProgramAnalysis<CallGraph<Invoke, JMethod>
             case "pta" -> new PTABasedBuilder();
             case "cha" -> new CHABuilder();
             case "rta" -> new RTABuilder();
+            case "xta" -> new XTABuilder();
             default -> throw new ConfigException(
                     "Unknown call graph building algorithm: " + algorithm);
         };
