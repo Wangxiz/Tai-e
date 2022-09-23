@@ -42,7 +42,7 @@ import java.util.stream.Collectors;
 /**
  * Builds call graph via rapid type analysis.
  */
-public class RTABuilder extends PropagationBasedBuilder {
+public final class RTABuilder extends PropagationBasedBuilder {
 
     private Set<JClass> instantiatedClasses;
     private MultiMap<JClass, Pair<Invoke, JMethod>> pending;

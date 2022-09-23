@@ -34,7 +34,7 @@ import java.util.stream.Collectors;
 /**
  * Builds call graph via class hierarchy analysis.
  */
-class CHABuilder extends PropagationBasedBuilder {
+public final class CHABuilder extends PropagationBasedBuilder {
 
     @Override
     protected void propagateMethod(JMethod method) {

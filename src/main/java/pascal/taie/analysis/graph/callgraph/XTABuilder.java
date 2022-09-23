@@ -49,7 +49,7 @@ import java.util.stream.Collectors;
 /**
  * Builds call graph via XTA.
  */
-public class XTABuilder extends PropagationBasedBuilder {
+public final class XTABuilder extends PropagationBasedBuilder {
 
     private MultiMap<JMethod, JClass> mapM;
     private MultiMap<JField, JClass> mapF;
