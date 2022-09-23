@@ -26,7 +26,7 @@
   id: cg
   requires: [ pta(algorithm=pta) ]
   options:
-    algorithm: pta # | cha | rta | xta
+    algorithm: pta # | cha | rta | xta | mta
     dump: null # path of file to dump reachable methods and call edges
     dump-methods: null # path of file to dump reachable methods
     dump-call-edges: null # path of file to dump to call edges

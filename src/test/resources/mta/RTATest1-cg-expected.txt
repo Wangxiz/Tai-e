@@ -1,0 +1,12 @@
+-------------------- <A: void <init>()> (cg) --------------------
+[0@L16] invokespecial %this.<java.lang.Object: void <init>()>(); [<java.lang.Object: void <init>()>]
+
+-------------------- <RTATest1: void main(java.lang.String[])> (cg) --------------------
+[0@L3] temp$0 = invokestatic <RTATest1: java.lang.Object foo()>(); [<RTATest1: java.lang.Object foo()>]
+[2@L4] invokestatic <RTATest1: void bar(java.lang.Object)>(o); [<RTATest1: void bar(java.lang.Object)>]
+
+-------------------- <RTATest1: java.lang.Object foo()> (cg) --------------------
+[1@L8] invokespecial temp$0.<A: void <init>()>(); [<A: void <init>()>]
+
+-------------------- <RTATest1: void bar(java.lang.Object)> (cg) --------------------
+[0@L12] invokevirtual o.<java.lang.Object: java.lang.String toString()>(); [<A: java.lang.String toString()>]

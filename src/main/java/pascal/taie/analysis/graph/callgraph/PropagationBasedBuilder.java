@@ -92,11 +92,15 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
 
     protected abstract Set<JMethod> resolveVirtualCalleesOf(Invoke callSite);
 
+    protected Set<JMethod> resolveStaticCalleesOf(Invoke callSite) {
+        return Set.of(callSite.getMethodRef().resolve());
+    }
+
     protected Set<JMethod> resolveCalleesOf(Invoke callSite) {
         CallKind kind = CallGraphs.getCallKind(callSite);
         return switch (kind) {
             case INTERFACE, VIRTUAL -> resolveVirtualCalleesOf(callSite);
-            case SPECIAL, STATIC -> Set.of(callSite.getMethodRef().resolve());
+            case SPECIAL, STATIC -> resolveStaticCalleesOf(callSite);
             case DYNAMIC -> {
                 logger.debug("CHA cannot resolve invokedynamic " + callSite);
                 yield Set.of();

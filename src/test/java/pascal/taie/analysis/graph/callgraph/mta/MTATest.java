@@ -20,21 +20,34 @@
  * License along with Tai-e. If not, see <https://www.gnu.org/licenses/>.
  */
 
-package pascal.taie.analysis.graph.callgraph;
+package pascal.taie.analysis.graph.callgraph.mta;
 
-import org.junit.runner.RunWith;
-import org.junit.runners.Suite;
-import pascal.taie.analysis.graph.callgraph.cha.CHAFullTest;
-import pascal.taie.analysis.graph.callgraph.mta.MTAFullTest;
-import pascal.taie.analysis.graph.callgraph.rta.RTAFullTest;
-import pascal.taie.analysis.graph.callgraph.xta.XTAFullTest;
+import org.junit.Test;
+import pascal.taie.analysis.Tests;
 
-@RunWith(Suite.class)
-@Suite.SuiteClasses({
-        CHAFullTest.class,
-        RTAFullTest.class,
-        XTAFullTest.class,
-        MTAFullTest.class,
-})
-public class CGTestSuite {
+public class MTATest {
+
+    protected static void test(String main) {
+        Tests.testMain(main, "src/test/resources/mta/", "cg", "algorithm:mta");
+    }
+
+    @Test
+    public void testStaticCall() {
+        test("StaticCall");
+    }
+
+    @Test
+    public void testVirtualCall() {
+        test("VirtualCall");
+    }
+
+    @Test
+    public void testInterface() {
+        test("Interface");
+    }
+
+    @Test
+    public void testAbstractMethod() {
+        test("AbstractMethod");
+    }
 }
