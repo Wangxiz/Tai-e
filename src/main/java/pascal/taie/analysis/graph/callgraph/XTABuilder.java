@@ -55,12 +55,12 @@ public final class XTABuilder extends PropagationBasedBuilder {
     private MultiMap<JField, JClass> mapF;
     private TwoKeyMap<JClass, JMethod, Set<Pair<Invoke, JMethod>>> pending;
 
-    private MultiMap<JMethod, JField> methodToStores;
-    private MultiMap<JField, JMethod> loadToMethods;
-
     private MultiMap<JField, JClass> fieldSubTypes;
     private MultiMap<JMethod, JClass> paramSubTypes;
     private MultiMap<JMethod, JClass> returnSubTypes;
+
+    private MultiMap<JMethod, JField> methodToStores;
+    private MultiMap<JField, JMethod> loadToMethods;
 
     @Override
     protected void customInit() {
@@ -68,12 +68,12 @@ public final class XTABuilder extends PropagationBasedBuilder {
         mapF = Maps.newMultiMap();
         pending = Maps.newTwoKeyMap();
 
-        methodToStores = Maps.newMultiMap();
-        loadToMethods = Maps.newMultiMap();
-
         fieldSubTypes = Maps.newMultiMap();
         paramSubTypes = Maps.newMultiMap();
         returnSubTypes = Maps.newMultiMap();
+
+        methodToStores = Maps.newMultiMap();
+        loadToMethods = Maps.newMultiMap();
     }
 
     private Set<JClass> getFieldSubTypes(JField field) {
@@ -111,11 +111,11 @@ public final class XTABuilder extends PropagationBasedBuilder {
 
     private void propagateToMethod(Set<JClass> classes, JMethod method) {
         boolean changed = false;
-        for (JClass c : classes) {
-            boolean cgd = mapM.put(method, c);
+        for (JClass instanceClass : classes) {
+            boolean cgd = mapM.put(method, instanceClass);
             changed |= cgd;
             if (cgd) {
-                resolvePending(c, method);
+                resolvePending(instanceClass, method);
             }
         }
         if (changed) {
@@ -127,8 +127,8 @@ public final class XTABuilder extends PropagationBasedBuilder {
 
     private void propagateToField(Set<JClass> classes, JField field) {
         boolean changed = false;
-        for (JClass c : classes) {
-            changed |= mapF.put(field, c);
+        for (JClass instanceClass : classes) {
+            changed |= mapF.put(field, instanceClass);
         }
         if (changed) {
             propagateFieldToMethods(field);
@@ -214,8 +214,7 @@ public final class XTABuilder extends PropagationBasedBuilder {
     }
 
     private void resolvePending(JClass jClass, JMethod method) {
-        pending.getOrDefault(jClass, method, Set.of())
-                .forEach(this::update);
+        pending.getOrDefault(jClass, method, Set.of()).forEach(this::update);
     }
 
     private void processStoreField(JMethod method, StoreField storeField) {
@@ -258,21 +257,21 @@ public final class XTABuilder extends PropagationBasedBuilder {
         if (callees == null) {
             Map<Boolean, Set<JClass>> classes = getSubTypes(cls).stream()
                     .collect(Collectors.groupingBy(c -> mapM.contains(caller, c), Collectors.toSet()));
-            classes.getOrDefault(false, Set.of()).forEach(c -> {
-                        JMethod method = hierarchy.dispatch(c, methodRef);
-                        if (Objects.nonNull(method)) {
-                            pending.getOrDefault(c, caller, Sets.newSet())
-                                    .add(new Pair<>(callSite, method));
-                        }
-                    });
+            classes.getOrDefault(false, Set.of()).forEach(targetClass -> {
+                JMethod method = hierarchy.dispatch(targetClass, methodRef);
+                if (Objects.nonNull(method)) {
+                    pending.getOrDefault(targetClass, caller, Sets.newSet())
+                            .add(new Pair<>(callSite, method));
+                }
+            });
             Set<JMethod> methods = Sets.newSet();
-            classes.getOrDefault(true, Set.of()).forEach(c -> {
-                JMethod callee = hierarchy.dispatch(c, methodRef);
+            classes.getOrDefault(true, Set.of()).forEach(targetClass -> {
+                JMethod callee = hierarchy.dispatch(targetClass, methodRef);
                 if (Objects.nonNull(callee)) {
                     methods.add(callee);
-                    boolean changed = mapM.put(callee, c);
+                    boolean changed = mapM.put(callee, targetClass);
                     if (changed) {
-                        resolvePending(c, callee);
+                        resolvePending(targetClass, callee);
                         propagateCalleeToCallers(callee);
                         propagateCallerToCallees(callee);
                         propagateMethodToFields(callee);
