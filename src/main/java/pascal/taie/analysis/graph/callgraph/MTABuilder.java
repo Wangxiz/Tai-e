@@ -270,7 +270,7 @@ public final class MTABuilder extends PropagationBasedBuilder {
             classes.getOrDefault(false, Set.of()).forEach(targetClass -> {
                 JMethod method = hierarchy.dispatch(targetClass, methodRef);
                 if (Objects.nonNull(method)) {
-                    pending.getOrDefault(targetClass, callerClass, Sets.newSet())
+                    pending.computeIfAbsent(targetClass, callerClass, (t, c) -> Sets.newSet())
                             .add(new Pair<>(callSite, method));
                 }
             });

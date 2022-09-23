@@ -37,6 +37,16 @@ public class MTAFullTest extends MTATest {
     }
 
     @Test
+    public void testMTATest1() {
+        test("MTATest1");
+    }
+
+    @Test
+    public void testMTATest2() {
+        test("MTATest2");
+    }
+
+    @Test
     public void testSpecialCall() {
         test("SpecialCall");
     }
@@ -75,4 +85,10 @@ public class MTAFullTest extends MTATest {
     public void testLongCallChain() {
         test("LongCallChain");
     }
+
+    @Test
+    public void testStaticCall2() {
+        test("StaticCall2");
+    }
+
 }

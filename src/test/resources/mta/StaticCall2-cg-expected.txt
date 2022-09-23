@@ -1,0 +1,24 @@
+-------------------- <StaticCall2: void main(java.lang.String[])> (cg) --------------------
+[0@L4] invokestatic <StaticCall2: void foo()>(); [<StaticCall2: void foo()>]
+[1@L5] invokestatic <A: void baz()>(); [<A: void baz()>]
+
+-------------------- <StaticCall2: void foo()> (cg) --------------------
+[1@L9] invokespecial temp$0.<B: void <init>()>(); [<B: void <init>()>]
+[3@L10] invokestatic <StaticCall2: void bar(B)>(b); [<StaticCall2: void bar(B)>]
+
+-------------------- <StaticCall2: void bar(B)> (cg) --------------------
+[0@L14] invokestatic <B: void foo(B)>(b); [<B: void foo(B)>]
+
+-------------------- <A: void baz()> (cg) --------------------
+[0@L21] invokestatic <B: void qux()>(); [<B: void qux()>]
+
+-------------------- <B: void <init>()> (cg) --------------------
+[0@L26] invokespecial %this.<java.lang.Object: void <init>()>(); [<java.lang.Object: void <init>()>]
+
+-------------------- <B: void qux()> (cg) --------------------
+[0@L29] invokestatic <A: void baz()>(); [<A: void baz()>]
+
+-------------------- <B: void foo(B)> (cg) --------------------
+[0@L33] invokevirtual b.<B: void haz()>(); [<B: void haz()>]
+
+-------------------- <B: void haz()> (cg) --------------------

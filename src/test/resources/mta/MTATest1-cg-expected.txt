@@ -1,0 +1,26 @@
+-------------------- <MTATest1: void main(java.lang.String[])> (cg) --------------------
+[0@L5] invokestatic <MTATest1: void foo()>(); [<MTATest1: void foo()>]
+[1@L6] invokestatic <MTATest1: void bar()>(); [<MTATest1: void bar()>]
+[2@L7] invokestatic <MTATest1: void car()>(); [<MTATest1: void car()>]
+[3@L8] invokestatic <A: void foo()>(); [<A: void foo()>]
+
+-------------------- <MTATest1: void foo()> (cg) --------------------
+[1@L12] invokespecial temp$0.<A: void <init>()>(); [<A: void <init>()>]
+
+-------------------- <MTATest1: void bar()> (cg) --------------------
+[1@L17] invokevirtual temp$0.<java.lang.Object: java.lang.String toString()>(); [<A: java.lang.String toString()>, <B: java.lang.String toString()>]
+
+-------------------- <MTATest1: void car()> (cg) --------------------
+[1@L21] invokespecial temp$0.<B: void <init>()>(); [<B: void <init>()>]
+
+-------------------- <A: void <init>()> (cg) --------------------
+[0@L26] invokespecial %this.<java.lang.Object: void <init>()>(); [<java.lang.Object: void <init>()>]
+
+-------------------- <A: void foo()> (cg) --------------------
+[1@L32] invokespecial temp$0.<C: void <init>()>(); [<C: void <init>()>]
+
+-------------------- <B: void <init>()> (cg) --------------------
+[0@L36] invokespecial %this.<java.lang.Object: void <init>()>(); [<java.lang.Object: void <init>()>]
+
+-------------------- <C: void <init>()> (cg) --------------------
+[0@L42] invokespecial %this.<java.lang.Object: void <init>()>(); [<java.lang.Object: void <init>()>]
