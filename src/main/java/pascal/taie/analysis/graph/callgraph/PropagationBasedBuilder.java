@@ -4,19 +4,24 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import pascal.taie.World;
 import pascal.taie.ir.proginfo.MemberRef;
+import pascal.taie.ir.proginfo.MethodRef;
 import pascal.taie.ir.stmt.Invoke;
 import pascal.taie.language.classes.ClassHierarchy;
 import pascal.taie.language.classes.JClass;
 import pascal.taie.language.classes.JMethod;
+import pascal.taie.language.type.ClassType;
 import pascal.taie.util.AnalysisException;
 import pascal.taie.util.collection.Maps;
+import pascal.taie.util.collection.Pair;
+import pascal.taie.util.collection.Sets;
 import pascal.taie.util.collection.TwoKeyMap;
 
 import java.util.ArrayDeque;
-import java.util.List;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMethod> {
 
@@ -28,6 +33,8 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
     protected Queue<JMethod> workList;
 
     protected void customInit() {}
+
+    protected void postProcess() {}
 
     @Override
     public CallGraph<Invoke, JMethod> build() {
@@ -51,6 +58,8 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
             callGraph.addReachableMethod(method);
             propagateMethod(method);
         }
+        postProcess();
+
         return callGraph;
     }
 
@@ -59,6 +68,17 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
     protected void addCGEdge(Invoke invoke, JMethod callee) {
         callGraph.addEdge(new Edge<>(
                 CallGraphs.getCallKind(invoke), invoke, callee));
+    }
+
+    protected void update(Invoke invoke, JMethod callee) {
+        addCGEdge(invoke, callee);
+        MethodRef methodRef = invoke.getMethodRef();
+        JClass cls = methodRef.getDeclaringClass();
+        resolveTable.computeIfAbsent(cls, methodRef, (c, m) -> Sets.newSet()).add(callee);
+    }
+
+    protected void update(Pair<Invoke, JMethod> pair) {
+        update(pair.first(), pair.second());
     }
 
     protected void processCallSite(Invoke callSite) {
@@ -86,18 +106,31 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
         };
     }
 
-    protected List<JClass> getAllSubclassesOf(JClass cls) {
+    protected Set<JClass> getSubTypes(JClass cls) {
         return hierarchy.getAllSubclassesOf(cls)
                 .stream()
                 .filter(Predicate.not(JClass::isAbstract))
-                .toList();
+                .collect(Collectors.toSet());
     }
 
-    protected List<JClass> getAllSubclassesOf(List<JClass> classes) {
+    protected Set<JClass> getSubTypes(Set<JClass> classes) {
         return classes.stream()
-                .map(this::getAllSubclassesOf)
-                .flatMap(List::stream)
-                .toList();
+                .map(this::getSubTypes)
+                .flatMap(Set::stream)
+                .collect(Collectors.toSet());
+    }
+
+    protected Set<JClass> getParamTypes(JMethod method) {
+        return method.getParamTypes().stream()
+                .filter(type -> type instanceof ClassType)
+                .map(type -> ((ClassType) type).getJClass())
+                .collect(Collectors.toSet());
+    }
+
+    protected Optional<JClass> getReturnType(JMethod method) {
+        return Optional.ofNullable(method.getReturnType())
+                .filter(type -> type instanceof ClassType)
+                .map(type -> ((ClassType) type).getJClass());
     }
 
 }

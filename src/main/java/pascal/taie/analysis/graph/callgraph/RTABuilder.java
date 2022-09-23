@@ -34,7 +34,6 @@ import pascal.taie.util.collection.MultiMap;
 import pascal.taie.util.collection.Pair;
 import pascal.taie.util.collection.Sets;
 
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -76,17 +75,7 @@ public class RTABuilder extends PropagationBasedBuilder {
     }
 
     private void resolvePending(JClass jClass) {
-        pending.get(jClass).forEach(pair -> {
-            // update callGraph by adding new edge
-            Invoke invoke = pair.first();
-            JMethod callee = pair.second();
-            callGraph.addEdge(new Edge<>(CallGraphs.getCallKind(invoke), invoke, callee));
-            // update resolveTable by updating cache
-            addCGEdge(invoke, callee);
-            MethodRef methodRef = invoke.getMethodRef();
-            JClass cls = methodRef.getDeclaringClass();
-            resolveTable.computeIfAbsent(cls, methodRef, (c, m) -> Sets.newSet()).add(callee);
-        });
+        pending.get(jClass).forEach(this::update);
     }
 
     @Override
@@ -95,7 +84,7 @@ public class RTABuilder extends PropagationBasedBuilder {
         JClass cls = methodRef.getDeclaringClass();
         Set<JMethod> callees = resolveTable.get(cls, methodRef);
         if (callees == null) {
-            List<JClass> classes = getAllSubclassesOf(cls);
+            Set<JClass> classes = getSubTypes(cls);
             classes.stream()
                     .filter(Predicate.not(instantiatedClasses::contains))
                     .forEach(c -> {

@@ -50,7 +50,7 @@ class CHABuilder extends PropagationBasedBuilder {
         JClass cls = methodRef.getDeclaringClass();
         Set<JMethod> callees = resolveTable.get(cls, methodRef);
         if (callees == null) {
-            callees = getAllSubclassesOf(cls)
+            callees = getSubTypes(cls)
                     .stream()
                     .map(c -> hierarchy.dispatch(c, methodRef))
                     .filter(Objects::nonNull) // filter out null callees
