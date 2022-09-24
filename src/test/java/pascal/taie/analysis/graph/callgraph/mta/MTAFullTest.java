@@ -47,6 +47,16 @@ public class MTAFullTest extends MTATest {
     }
 
     @Test
+    public void testFTATest1() {
+        test("FTATest1");
+    }
+
+    @Test
+    public void testFTATest2() {
+        test("FTATest2");
+    }
+
+    @Test
     public void testSpecialCall() {
         test("SpecialCall");
     }

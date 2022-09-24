@@ -1,0 +1,27 @@
+-------------------- <FTATest2: void <init>()> (cg) --------------------
+[0@L1] invokespecial %this.<java.lang.Object: void <init>()>(); [<java.lang.Object: void <init>()>]
+
+-------------------- <FTATest2: void main(java.lang.String[])> (cg) --------------------
+[1@L7] invokespecial temp$0.<FTATest2: void <init>()>(); [<FTATest2: void <init>()>]
+[3@L8] invokevirtual t.<FTATest2: void foo()>(); [<FTATest2: void foo()>]
+[4@L9] invokevirtual t.<FTATest2: void car()>(); [<FTATest2: void car()>]
+[5@L10] invokevirtual t.<FTATest2: void bar()>(); [<FTATest2: void bar()>]
+
+-------------------- <FTATest2: void foo()> (cg) --------------------
+[1@L14] invokespecial temp$0.<A: void <init>()>(); [<A: void <init>()>]
+
+-------------------- <FTATest2: void car()> (cg) --------------------
+[1@L19] invokespecial temp$0.<B: void <init>()>(); [<B: void <init>()>]
+
+-------------------- <FTATest2: void bar()> (cg) --------------------
+[1@L24] invokespecial temp$0.<C: void <init>()>(); [<C: void <init>()>]
+[5@L26] invokevirtual temp$1.<java.lang.Object: java.lang.String toString()>(); [<C: java.lang.String toString()>, <java.lang.Object: java.lang.String toString()>, <java.lang.String: java.lang.String toString()>]
+
+-------------------- <A: void <init>()> (cg) --------------------
+[0@L30] invokespecial %this.<java.lang.Object: void <init>()>(); [<java.lang.Object: void <init>()>]
+
+-------------------- <B: void <init>()> (cg) --------------------
+[0@L36] invokespecial %this.<java.lang.Object: void <init>()>(); [<java.lang.Object: void <init>()>]
+
+-------------------- <C: void <init>()> (cg) --------------------
+[0@L42] invokespecial %this.<java.lang.Object: void <init>()>(); [<java.lang.Object: void <init>()>]
