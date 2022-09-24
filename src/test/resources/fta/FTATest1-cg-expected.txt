@@ -1,0 +1,23 @@
+-------------------- <FTATest1: void main(java.lang.String[])> (cg) --------------------
+[0@L7] invokestatic <FTATest1: void foo()>(); [<FTATest1: void foo()>]
+[1@L8] invokestatic <FTATest1: void car()>(); [<FTATest1: void car()>]
+[2@L9] invokestatic <FTATest1: void bar()>(); [<FTATest1: void bar()>]
+
+-------------------- <FTATest1: void foo()> (cg) --------------------
+[1@L13] invokespecial temp$0.<A: void <init>()>(); [<A: void <init>()>]
+
+-------------------- <FTATest1: void car()> (cg) --------------------
+[1@L18] invokespecial temp$0.<B: void <init>()>(); [<B: void <init>()>]
+
+-------------------- <FTATest1: void bar()> (cg) --------------------
+[1@L23] invokespecial temp$0.<C: void <init>()>(); [<C: void <init>()>]
+[5@L25] invokevirtual temp$1.<java.lang.Object: java.lang.String toString()>(); [<A: java.lang.String toString()>, <B: java.lang.String toString()>, <C: java.lang.String toString()>]
+
+-------------------- <A: void <init>()> (cg) --------------------
+[0@L29] invokespecial %this.<java.lang.Object: void <init>()>(); [<java.lang.Object: void <init>()>]
+
+-------------------- <B: void <init>()> (cg) --------------------
+[0@L35] invokespecial %this.<java.lang.Object: void <init>()>(); [<java.lang.Object: void <init>()>]
+
+-------------------- <C: void <init>()> (cg) --------------------
+[0@L41] invokespecial %this.<java.lang.Object: void <init>()>(); [<java.lang.Object: void <init>()>]
