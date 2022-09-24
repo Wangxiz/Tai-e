@@ -2,6 +2,7 @@ package pascal.taie.analysis.graph.callgraph;
 
 import pascal.taie.ir.stmt.Invoke;
 import pascal.taie.ir.stmt.LoadField;
+import pascal.taie.ir.stmt.New;
 import pascal.taie.ir.stmt.StoreField;
 import pascal.taie.language.classes.JClass;
 import pascal.taie.language.classes.JField;
@@ -82,6 +83,20 @@ public abstract class AbstractXTABuilder extends PropagationBasedBuilder {
     protected abstract void processLoadField(JMethod method, LoadField loadField);
 
     @Override
+    protected void propagateMethod(JMethod method) {
+        method.getIR().forEach(stmt -> {
+            if (stmt instanceof New newStmt) {
+                processNewStmt(newStmt);
+            } else if (stmt instanceof StoreField storeField) {
+                processStoreField(method, storeField);
+            } else if (stmt instanceof LoadField loadField) {
+                processLoadField(method, loadField);
+            }
+        });
+        callGraph.getCallSitesIn(method).forEach(this::processCallSite);
+    }
+
+    @Override
     protected void processCallSite(Invoke callSite) {
         JMethod caller = callSite.getContainer();
         resolveCalleesOf(callSite).forEach(callee -> {
@@ -93,5 +108,7 @@ public abstract class AbstractXTABuilder extends PropagationBasedBuilder {
             propagateCalleeToCaller(callee, caller);
         });
     }
+
+    protected abstract void resolvePending(JClass instanceClass, JMethod method);
 
 }

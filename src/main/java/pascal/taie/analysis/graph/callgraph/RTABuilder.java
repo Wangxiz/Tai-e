@@ -44,12 +44,14 @@ import java.util.stream.Collectors;
  */
 public final class RTABuilder extends PropagationBasedBuilder {
 
-    private Set<JClass> instantiatedClasses;
+    // all instantiated classes
+    private Set<JClass> iClasses;
+
     private MultiMap<JClass, Pair<Invoke, JMethod>> pending;
 
     @Override
     protected void customInit() {
-        instantiatedClasses = Sets.newSet();
+        iClasses = Sets.newSet();
         pending = Maps.newMultiMap();
     }
 
@@ -68,8 +70,8 @@ public final class RTABuilder extends PropagationBasedBuilder {
         NewExp newExp = stmt.getRValue();
         if (newExp instanceof NewInstance newInstance) {
             JClass instanceClass = newInstance.getType().getJClass();
-            if (!instantiatedClasses.contains(instanceClass)) {
-                instantiatedClasses.add(instanceClass);
+            if (!iClasses.contains(instanceClass)) {
+                iClasses.add(instanceClass);
                 resolvePending(instanceClass);
             }
         }
@@ -87,7 +89,7 @@ public final class RTABuilder extends PropagationBasedBuilder {
         if (callees == null) {
             Set<JClass> classes = getSubTypes(cls);
             classes.stream()
-                    .filter(Predicate.not(instantiatedClasses::contains))
+                    .filter(Predicate.not(iClasses::contains))
                     .forEach(c -> {
                         JMethod method = hierarchy.dispatch(c, methodRef);
                         if (Objects.nonNull(method)) {
@@ -95,7 +97,7 @@ public final class RTABuilder extends PropagationBasedBuilder {
                         }
                     });
             callees = classes.stream()
-                    .filter(instantiatedClasses::contains)
+                    .filter(iClasses::contains)
                     .map(c -> hierarchy.dispatch(c, methodRef))
                     .filter(Objects::nonNull) // filter out null callees
                     .collect(Collectors.toSet());

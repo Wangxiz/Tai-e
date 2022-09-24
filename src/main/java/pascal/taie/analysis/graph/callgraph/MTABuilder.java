@@ -51,23 +51,26 @@ import java.util.stream.Collectors;
  */
 public final class MTABuilder extends AbstractXTABuilder {
 
-    private MultiMap<JClass, JClass> mapC;
-    private MultiMap<JField, JClass> mapF;
-    private TwoKeyMap<JClass, JClass, Set<Pair<Invoke, JMethod>>> pending;
+    // a map from a class to all instantiated classes in all methods in the class
+    private MultiMap<JClass, JClass> iClassesPerClass;
+    // a map from a method to all instantiated classes for the field
+    private MultiMap<JField, JClass> iClassesPerField;
 
-    private MultiMap<JClass, JField> classToStores;
-    private MultiMap<JField, JClass> loadToClasses;
+    // a multimap from a method (class) to the fields which are stored by the methods
+    private MultiMap<JClass, JField> stores;
+    // a multimap from a field to the methods (classes) which load the field
+    private MultiMap<JField, JClass> loads;
+
+    private TwoKeyMap<JClass, JClass, Set<Pair<Invoke, JMethod>>> pending;
 
     @Override
     protected void customInit() {
         super.customInit();
-
-        mapC = Maps.newMultiMap();
-        mapF = Maps.newMultiMap();
+        iClassesPerClass = Maps.newMultiMap();
+        iClassesPerField = Maps.newMultiMap();
+        stores = Maps.newMultiMap();
+        loads = Maps.newMultiMap();
         pending = Maps.newTwoKeyMap();
-
-        classToStores = Maps.newMultiMap();
-        loadToClasses = Maps.newMultiMap();
     }
 
     @Override
@@ -79,7 +82,7 @@ public final class MTABuilder extends AbstractXTABuilder {
     private void propagateToClass(Set<JClass> classes, JClass clazz) {
         boolean changed = false;
         for (JClass instanceClass : classes) {
-            boolean cgd = mapC.put(clazz, instanceClass);
+            boolean cgd = iClassesPerClass.put(clazz, instanceClass);
             changed |= cgd;
             if (cgd) {
                 resolvePending(instanceClass, clazz);
@@ -100,7 +103,7 @@ public final class MTABuilder extends AbstractXTABuilder {
     protected void propagateToField(Set<JClass> classes, JField field) {
         boolean changed = false;
         for (JClass instanceClass : classes) {
-            changed |= mapF.put(field, instanceClass);
+            changed |= iClassesPerField.put(field, instanceClass);
         }
         if (changed) {
             propagateFieldToClasses(field);
@@ -110,7 +113,7 @@ public final class MTABuilder extends AbstractXTABuilder {
     @Override
     protected void propagateCallerToCallee(JMethod caller, JMethod callee) {
         Set<JClass> classes = getParamSubTypes(callee).stream()
-                .filter(c -> mapC.contains(caller.getDeclaringClass(), c))
+                .filter(c -> iClassesPerClass.contains(caller.getDeclaringClass(), c))
                 .collect(Collectors.toSet());
         propagateToMethod(classes, callee);
     }
@@ -118,44 +121,30 @@ public final class MTABuilder extends AbstractXTABuilder {
     @Override
     protected void propagateCalleeToCaller(JMethod callee, JMethod caller) {
         Set<JClass> classes = getReturnSubTypes(callee).stream()
-                .filter(c -> mapC.contains(callee.getDeclaringClass(), c))
+                .filter(c -> iClassesPerClass.contains(callee.getDeclaringClass(), c))
                 .collect(Collectors.toSet());
         propagateToMethod(classes, caller);
     }
 
     private void propagateFieldToClass(JField field, JClass clazz) {
-        propagateToClass(mapF.get(field), clazz);
+        propagateToClass(iClassesPerField.get(field), clazz);
     }
 
     private void propagateFieldToClasses(JField field) {
-        loadToClasses.get(field)
+        loads.get(field)
                 .forEach(clazz -> propagateFieldToClass(field, clazz));
     }
 
     private void propagateClassToField(JClass clazz, JField field) {
         Set<JClass> classes = getFieldSubTypes(field).stream()
-                .filter(c -> mapC.contains(clazz, c))
+                .filter(c -> iClassesPerClass.contains(clazz, c))
                 .collect(Collectors.toSet());
         propagateToField(classes, field);
     }
 
     private void propagateClassToFields(JClass clazz) {
-        classToStores.get(clazz)
+        stores.get(clazz)
                 .forEach(field -> propagateClassToField(clazz, field));
-    }
-
-    @Override
-    protected void propagateMethod(JMethod method) {
-        method.getIR().forEach(stmt -> {
-            if (stmt instanceof New newStmt) {
-                processNewStmt(newStmt);
-            } else if (stmt instanceof StoreField storeField) {
-                processStoreField(method, storeField);
-            } else if (stmt instanceof LoadField loadField) {
-                processLoadField(method, loadField);
-            }
-        });
-        callGraph.getCallSitesIn(method).forEach(this::processCallSite);
     }
 
     @Override
@@ -165,14 +154,14 @@ public final class MTABuilder extends AbstractXTABuilder {
         JClass srcClass = method.getDeclaringClass();
         if (newExp instanceof NewInstance newInstance) {
             JClass instanceClass = newInstance.getType().getJClass();
-            if (!mapC.contains(srcClass, instanceClass)) {
-                boolean changed = mapC.put(srcClass, instanceClass);
+            if (!iClassesPerClass.contains(srcClass, instanceClass)) {
+                boolean changed = iClassesPerClass.put(srcClass, instanceClass);
                 if (changed) {
+                    resolvePending(instanceClass, srcClass);
                     srcClass.getDeclaredMethods()
                             .stream()
                             .filter(Predicate.not(JMethod::isAbstract))
                             .forEach(m -> {
-                                resolvePending(instanceClass, srcClass);
                                 propagateCalleeToCallers(m);
                                 propagateCallerToCallees(m);
                             });
@@ -182,10 +171,6 @@ public final class MTABuilder extends AbstractXTABuilder {
         }
     }
 
-    private void resolvePending(JClass instanceClass, JClass clazz) {
-        pending.getOrDefault(instanceClass, clazz, Set.of()).forEach(this::update);
-    }
-
     @Override
     protected void processStoreField(JMethod method, StoreField storeField) {
         JField field = storeField.getFieldRef().resolve();
@@ -193,7 +178,7 @@ public final class MTABuilder extends AbstractXTABuilder {
         if (type instanceof ClassType) {
             JClass clazz = method.getDeclaringClass();
             propagateClassToField(clazz, field);
-            classToStores.put(clazz, field);
+            stores.put(clazz, field);
         }
     }
 
@@ -204,8 +189,18 @@ public final class MTABuilder extends AbstractXTABuilder {
         if (type instanceof ClassType) {
             JClass clazz = method.getDeclaringClass();
             propagateFieldToClass(field, clazz);
-            loadToClasses.put(field, clazz);
+            loads.put(field, clazz);
         }
+    }
+
+    private void resolvePending(JClass instanceClass, JClass clazz) {
+        pending.getOrDefault(instanceClass, clazz, Set.of()).forEach(this::update);
+    }
+
+    @Override
+    protected void resolvePending(JClass instanceClass, JMethod method) {
+        JClass clazz = method.getDeclaringClass();
+        resolvePending(instanceClass, clazz);
     }
 
     @Override
@@ -216,7 +211,7 @@ public final class MTABuilder extends AbstractXTABuilder {
         Set<JMethod> callees = resolveTable.get(cls, methodRef);
         if (callees == null) {
             Map<Boolean, Set<JClass>> classes = getSubTypes(cls).stream()
-                    .collect(Collectors.groupingBy(c -> mapC.contains(callerClass, c), Collectors.toSet()));
+                    .collect(Collectors.groupingBy(c -> iClassesPerClass.contains(callerClass, c), Collectors.toSet()));
             classes.getOrDefault(false, Set.of()).forEach(targetClass -> {
                 JMethod method = hierarchy.dispatch(targetClass, methodRef);
                 if (Objects.nonNull(method)) {
@@ -230,13 +225,13 @@ public final class MTABuilder extends AbstractXTABuilder {
                 if (Objects.nonNull(callee)) {
                     methods.add(callee);
                     JClass calleeClass = callee.getDeclaringClass();
-                    boolean changed = mapC.put(calleeClass, targetClass);
+                    boolean changed = iClassesPerClass.put(calleeClass, targetClass);
                     if (changed) {
+                        resolvePending(targetClass, calleeClass);
                         calleeClass.getDeclaredMethods()
                                 .stream()
                                 .filter(Predicate.not(JMethod::isAbstract))
                                 .forEach(method -> {
-                                    resolvePending(targetClass, calleeClass);
                                     propagateCalleeToCallers(method);
                                     propagateCallerToCallees(method);
                                 });
