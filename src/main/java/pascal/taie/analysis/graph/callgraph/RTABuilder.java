@@ -63,19 +63,20 @@ public final class RTABuilder extends PropagationBasedBuilder {
         callGraph.getCallSitesIn(method).forEach(this::processCallSite);
     }
 
-    private void processNewStmt(New stmt) {
+    @Override
+    protected void processNewStmt(New stmt) {
         NewExp newExp = stmt.getRValue();
         if (newExp instanceof NewInstance newInstance) {
-            JClass jClass = newInstance.getType().getJClass();
-            if (!instantiatedClasses.contains(jClass)) {
-                instantiatedClasses.add(jClass);
-                resolvePending(jClass);
+            JClass instanceClass = newInstance.getType().getJClass();
+            if (!instantiatedClasses.contains(instanceClass)) {
+                instantiatedClasses.add(instanceClass);
+                resolvePending(instanceClass);
             }
         }
     }
 
-    private void resolvePending(JClass jClass) {
-        pending.get(jClass).forEach(this::update);
+    private void resolvePending(JClass instanceClass) {
+        pending.get(instanceClass).forEach(this::update);
     }
 
     @Override

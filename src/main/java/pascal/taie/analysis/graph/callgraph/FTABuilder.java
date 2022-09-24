@@ -43,74 +43,35 @@ import pascal.taie.util.collection.TwoKeyMap;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
  * Builds call graph via FTA.
  */
-public final class FTABuilder extends PropagationBasedBuilder {
+public final class FTABuilder extends AbstractXTABuilder {
 
     private MultiMap<JMethod, JClass> mapM;
     private MultiMap<JClass, JClass> mapC;
     private TwoKeyMap<JClass, JMethod, Set<Pair<Invoke, JMethod>>> pending;
-
-    private MultiMap<JField, JClass> fieldSubTypes;
-    private MultiMap<JMethod, JClass> paramSubTypes;
-    private MultiMap<JMethod, JClass> returnSubTypes;
 
     private MultiMap<JMethod, JClass> methodToClasses;
     private MultiMap<JClass, JMethod> classToMethods;
 
     @Override
     protected void customInit() {
+        super.customInit();
+
         mapM = Maps.newMultiMap();
         mapC = Maps.newMultiMap();
         pending = Maps.newTwoKeyMap();
-
-        fieldSubTypes = Maps.newMultiMap();
-        paramSubTypes = Maps.newMultiMap();
-        returnSubTypes = Maps.newMultiMap();
 
         methodToClasses = Maps.newMultiMap();
         classToMethods = Maps.newMultiMap();
     }
 
-    private Set<JClass> getFieldSubTypes(JField field) {
-        if (field.getType() instanceof ClassType classType) {
-            JClass jClass = classType.getJClass();
-            if (!fieldSubTypes.containsKey(field)) {
-                fieldSubTypes.putAll(field, getSubTypes(jClass));
-            }
-            return fieldSubTypes.get(field);
-        } else {
-            return Set.of();
-        }
-    }
-
-    private Set<JClass> getParamSubTypes(JMethod callee) {
-        if (!paramSubTypes.containsKey(callee)) {
-            Set<JClass> paramTypes = getSubTypes(getParamTypes(callee));
-            paramSubTypes.putAll(callee, paramTypes);
-        }
-        return paramSubTypes.get(callee);
-    }
-
-    private Set<JClass> getReturnSubTypes(JMethod callee) {
-        Optional<JClass> returnType = getReturnType(callee);
-        if (returnType.isPresent()) {
-            if (!returnSubTypes.containsKey(callee)) {
-                Set<JClass> returnTypes = getSubTypes(returnType.get());
-                returnSubTypes.putAll(callee, returnTypes);
-            }
-            return returnSubTypes.get(callee);
-        } else {
-            return Set.of();
-        }
-    }
-
-    private void propagateToMethod(Set<JClass> classes, JMethod method) {
+    @Override
+    protected void propagateToMethod(Set<JClass> classes, JMethod method) {
         boolean changed = false;
         for (JClass instanceClass : classes) {
             boolean cgd = mapM.put(method, instanceClass);
@@ -126,6 +87,12 @@ public final class FTABuilder extends PropagationBasedBuilder {
         }
     }
 
+    @Override
+    protected void propagateToField(Set<JClass> classes, JField field) {
+        JClass clazz = field.getDeclaringClass();
+        propagateToClass(classes, clazz);
+    }
+
     private void propagateToClass(Set<JClass> classes, JClass clazz) {
         boolean changed = false;
         for (JClass instanceClass : classes) {
@@ -136,30 +103,20 @@ public final class FTABuilder extends PropagationBasedBuilder {
         }
     }
 
-    private void propagateCallerToCallee(JMethod caller, JMethod callee) {
+    @Override
+    protected void propagateCallerToCallee(JMethod caller, JMethod callee) {
         Set<JClass> classes = getParamSubTypes(callee).stream()
                 .filter(c -> mapM.contains(caller, c))
                 .collect(Collectors.toSet());
         propagateToMethod(classes, callee);
     }
 
-    private void propagateCallerToCallees(JMethod caller) {
-        callGraph.getCalleesOfM(caller)
-                .forEach(callee -> propagateCallerToCallee(caller, callee));
-    }
-
-    private void propagateCalleeToCaller(JMethod callee, JMethod caller) {
+    @Override
+    protected void propagateCalleeToCaller(JMethod callee, JMethod caller) {
         Set<JClass> classes = getReturnSubTypes(callee).stream()
                 .filter(c -> mapM.contains(callee, c))
                 .collect(Collectors.toSet());
         propagateToMethod(classes, caller);
-    }
-
-    private void propagateCalleeToCallers(JMethod callee) {
-        callGraph.getCallersOf(callee)
-                .stream()
-                .map(Invoke::getContainer)
-                .forEach(caller -> propagateCalleeToCaller(callee, caller));
     }
 
     private void propagateClassToMethod(JClass clazz, JMethod method) {
@@ -199,9 +156,10 @@ public final class FTABuilder extends PropagationBasedBuilder {
         callGraph.getCallSitesIn(method).forEach(this::processCallSite);
     }
 
-    private void processNewStmt(New stmt) {
-        JMethod method = stmt.getContainer();
+    @Override
+    protected void processNewStmt(New stmt) {
         NewExp newExp = stmt.getRValue();
+        JMethod method = stmt.getContainer();
         if (newExp instanceof NewInstance newInstance) {
             JClass instanceClass = newInstance.getType().getJClass();
             if (!mapM.contains(method, instanceClass)) {
@@ -220,7 +178,8 @@ public final class FTABuilder extends PropagationBasedBuilder {
         pending.getOrDefault(instanceClass, method, Set.of()).forEach(this::update);
     }
 
-    private void processStoreField(JMethod method, StoreField storeField) {
+    @Override
+    protected void processStoreField(JMethod method, StoreField storeField) {
         JField field = storeField.getFieldRef().resolve();
         Type type = field.getType();
         if (type instanceof ClassType) {
@@ -230,7 +189,8 @@ public final class FTABuilder extends PropagationBasedBuilder {
         }
     }
 
-    private void processLoadField(JMethod method, LoadField loadField) {
+    @Override
+    protected void processLoadField(JMethod method, LoadField loadField) {
         JField field = loadField.getFieldRef().resolve();
         Type type = field.getType();
         if (type instanceof ClassType) {
@@ -238,19 +198,6 @@ public final class FTABuilder extends PropagationBasedBuilder {
             propagateClassToMethod(clazz, method);
             classToMethods.put(clazz, method);
         }
-    }
-
-    @Override
-    protected void processCallSite(Invoke callSite) {
-        JMethod caller = callSite.getContainer();
-        resolveCalleesOf(callSite).forEach(callee -> {
-            if (!callGraph.contains(callee)) {
-                workList.add(callee);
-            }
-            addCGEdge(callSite, callee);
-            propagateCallerToCallee(caller, callee);
-            propagateCalleeToCaller(callee, caller);
-        });
     }
 
     @Override

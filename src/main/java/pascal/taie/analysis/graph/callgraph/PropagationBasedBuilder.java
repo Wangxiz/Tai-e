@@ -6,6 +6,7 @@ import pascal.taie.World;
 import pascal.taie.ir.proginfo.MemberRef;
 import pascal.taie.ir.proginfo.MethodRef;
 import pascal.taie.ir.stmt.Invoke;
+import pascal.taie.ir.stmt.New;
 import pascal.taie.language.classes.ClassHierarchy;
 import pascal.taie.language.classes.JClass;
 import pascal.taie.language.classes.JMethod;
@@ -64,6 +65,8 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
     }
 
     protected abstract void propagateMethod(JMethod method);
+
+    protected abstract void processNewStmt(New stmt);
 
     protected void addCGEdge(Invoke invoke, JMethod callee) {
         callGraph.addEdge(new Edge<>(
