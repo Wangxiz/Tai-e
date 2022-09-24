@@ -28,7 +28,7 @@ import pascal.taie.analysis.Tests;
 public class FTATest {
 
     protected static void test(String main) {
-        Tests.testMain(main, "src/test/resources/fta/", "cg", "algorithm:fta");
+        Tests.testMain(main, "src/test/resources/callgraph/fta/", "cg", "algorithm:fta");
     }
 
     @Test

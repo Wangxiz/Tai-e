@@ -28,7 +28,7 @@ import pascal.taie.analysis.Tests;
 public class XTATest {
 
     protected static void test(String main) {
-        Tests.testMain(main, "src/test/resources/xta/", "cg", "algorithm:xta");
+        Tests.testMain(main, "src/test/resources/callgraph/xta/", "cg", "algorithm:xta");
     }
 
     @Test

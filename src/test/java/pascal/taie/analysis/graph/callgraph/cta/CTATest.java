@@ -28,7 +28,7 @@ import pascal.taie.analysis.Tests;
 public class CTATest {
 
     protected static void test(String main) {
-        Tests.testMain(main, "src/test/resources/cta/", "cg", "algorithm:cta");
+        Tests.testMain(main, "src/test/resources/callgraph/cta/", "cg", "algorithm:cta");
     }
 
     @Test

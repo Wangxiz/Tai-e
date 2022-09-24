@@ -28,7 +28,7 @@ import pascal.taie.analysis.Tests;
 public class MTATest {
 
     protected static void test(String main) {
-        Tests.testMain(main, "src/test/resources/mta/", "cg", "algorithm:mta");
+        Tests.testMain(main, "src/test/resources/callgraph/mta/", "cg", "algorithm:mta");
     }
 
     @Test
