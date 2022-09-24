@@ -24,7 +24,6 @@ package pascal.taie.analysis.graph.callgraph;
 
 import pascal.taie.ir.proginfo.MethodRef;
 import pascal.taie.ir.stmt.Invoke;
-import pascal.taie.ir.stmt.New;
 import pascal.taie.language.classes.JClass;
 import pascal.taie.language.classes.JMethod;
 
@@ -38,12 +37,9 @@ import java.util.stream.Collectors;
 public final class CHABuilder extends PropagationBasedBuilder {
 
     @Override
-    protected void propagateMethod(JMethod method) {
+    protected void processMethod(JMethod method) {
         callGraph.getCallSitesIn(method).forEach(this::processCallSite);
     }
-
-    @Override
-    protected void processNewStmt(New stmt) {}
 
     /**
      * Resolves callees of a call site via class hierarchy analysis.
@@ -56,7 +52,7 @@ public final class CHABuilder extends PropagationBasedBuilder {
         if (callees == null) {
             callees = getSubTypes(cls)
                     .stream()
-                    .map(c -> hierarchy.dispatch(c, methodRef))
+                    .map(clazz -> hierarchy.dispatch(clazz, methodRef))
                     .filter(Objects::nonNull) // filter out null callees
                     .collect(Collectors.toUnmodifiableSet());
             resolveTable.put(cls, methodRef, callees);

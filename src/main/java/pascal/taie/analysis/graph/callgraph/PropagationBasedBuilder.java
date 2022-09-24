@@ -10,7 +10,6 @@ import pascal.taie.ir.stmt.New;
 import pascal.taie.language.classes.ClassHierarchy;
 import pascal.taie.language.classes.JClass;
 import pascal.taie.language.classes.JMethod;
-import pascal.taie.language.type.ClassType;
 import pascal.taie.util.AnalysisException;
 import pascal.taie.util.collection.Maps;
 import pascal.taie.util.collection.Pair;
@@ -18,7 +17,6 @@ import pascal.taie.util.collection.Sets;
 import pascal.taie.util.collection.TwoKeyMap;
 
 import java.util.ArrayDeque;
-import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -57,16 +55,12 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
         while (!workList.isEmpty()) {
             JMethod method = workList.poll();
             callGraph.addReachableMethod(method);
-            propagateMethod(method);
+            processMethod(method);
         }
         postProcess();
 
         return callGraph;
     }
-
-    protected abstract void propagateMethod(JMethod method);
-
-    protected abstract void processNewStmt(New stmt);
 
     protected void addCGEdge(Invoke invoke, JMethod callee) {
         callGraph.addEdge(new Edge<>(
@@ -83,6 +77,10 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
     protected void update(Pair<Invoke, JMethod> pair) {
         update(pair.first(), pair.second());
     }
+
+    protected abstract void processMethod(JMethod method);
+
+    protected void processNewStmt(New stmt) {}
 
     protected void processCallSite(Invoke callSite) {
         resolveCalleesOf(callSite).forEach(callee -> {
@@ -125,19 +123,6 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
                 .map(this::getSubTypes)
                 .flatMap(Set::stream)
                 .collect(Collectors.toSet());
-    }
-
-    protected Set<JClass> getParamTypes(JMethod method) {
-        return method.getParamTypes().stream()
-                .filter(type -> type instanceof ClassType)
-                .map(type -> ((ClassType) type).getJClass())
-                .collect(Collectors.toSet());
-    }
-
-    protected Optional<JClass> getReturnType(JMethod method) {
-        return Optional.ofNullable(method.getReturnType())
-                .filter(type -> type instanceof ClassType)
-                .map(type -> ((ClassType) type).getJClass());
     }
 
 }

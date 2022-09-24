@@ -34,9 +34,9 @@ import pascal.taie.util.collection.MultiMap;
 import pascal.taie.util.collection.Pair;
 import pascal.taie.util.collection.Sets;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -56,7 +56,7 @@ public final class RTABuilder extends PropagationBasedBuilder {
     }
 
     @Override
-    protected void propagateMethod(JMethod method) {
+    protected void processMethod(JMethod method) {
         method.getIR().forEach(stmt -> {
             if (stmt instanceof New newStmt) {
                 processNewStmt(newStmt);
@@ -80,6 +80,9 @@ public final class RTABuilder extends PropagationBasedBuilder {
     private void resolvePending(JClass instanceClass) {
         pending.get(instanceClass).forEach(this::update);
     }
+    private void updatePending(JClass clazz, Invoke invoke, JMethod callee) {
+        pending.put(clazz, new Pair<>(invoke, callee));
+    }
 
     @Override
     protected Set<JMethod> resolveVirtualCalleesOf(Invoke callSite) {
@@ -87,18 +90,17 @@ public final class RTABuilder extends PropagationBasedBuilder {
         JClass cls = methodRef.getDeclaringClass();
         Set<JMethod> callees = resolveTable.get(cls, methodRef);
         if (callees == null) {
-            Set<JClass> classes = getSubTypes(cls);
-            classes.stream()
-                    .filter(Predicate.not(iClasses::contains))
-                    .forEach(c -> {
-                        JMethod method = hierarchy.dispatch(c, methodRef);
-                        if (Objects.nonNull(method)) {
-                            pending.put(c, new Pair<>(callSite, method));
-                        }
-                    });
-            callees = classes.stream()
-                    .filter(iClasses::contains)
-                    .map(c -> hierarchy.dispatch(c, methodRef))
+            Map<Boolean, Set<JClass>> classes = getSubTypes(cls).stream()
+                    .collect(Collectors.groupingBy(iClasses::contains, Collectors.toSet()));
+            classes.getOrDefault(false, Set.of()).forEach(clazz -> {
+                JMethod callee = hierarchy.dispatch(clazz, methodRef);
+                if (Objects.nonNull(callee)) {
+                    updatePending(clazz, callSite, callee);
+                }
+            });
+            callees = classes.getOrDefault(true, Set.of())
+                    .stream()
+                    .map(clazz -> hierarchy.dispatch(clazz, methodRef))
                     .filter(Objects::nonNull) // filter out null callees
                     .collect(Collectors.toSet());
             resolveTable.put(cls, methodRef, callees);
