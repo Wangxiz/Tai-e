@@ -32,7 +32,6 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
     protected Queue<JMethod> workList;
 
     protected void customInit() {}
-
     protected void postProcess() {}
 
     @Override
@@ -43,22 +42,16 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
     protected CallGraph<Invoke, JMethod> buildCallGraph(JMethod entry) {
         callGraph = new DefaultCallGraph();
         callGraph.addEntryMethod(entry);
-
         hierarchy = World.get().getClassHierarchy();
         resolveTable = Maps.newTwoKeyMap();
-
         workList = new ArrayDeque<>();
         workList.add(entry);
-
         customInit();
-
         while (!workList.isEmpty()) {
             JMethod method = workList.poll();
-            callGraph.addReachableMethod(method);
             processMethod(method);
         }
         postProcess();
-
         return callGraph;
     }
 
@@ -73,15 +66,12 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
         JClass cls = methodRef.getDeclaringClass();
         resolveTable.computeIfAbsent(cls, methodRef, (c, m) -> Sets.newSet()).add(callee);
     }
-
     protected void update(Pair<Invoke, JMethod> pair) {
         update(pair.first(), pair.second());
     }
 
     protected abstract void processMethod(JMethod method);
-
-    protected void processNewStmt(New stmt) {}
-
+    protected void processNew(New stmt) {}
     protected void processCallSite(Invoke callSite) {
         resolveCalleesOf(callSite).forEach(callee -> {
             if (!callGraph.contains(callee)) {
@@ -89,12 +79,6 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
             }
             addCGEdge(callSite, callee);
         });
-    }
-
-    protected abstract Set<JMethod> resolveVirtualCalleesOf(Invoke callSite);
-
-    protected Set<JMethod> resolveStaticCalleesOf(Invoke callSite) {
-        return Set.of(callSite.getMethodRef().resolve());
     }
 
     protected Set<JMethod> resolveCalleesOf(Invoke callSite) {
@@ -109,6 +93,11 @@ public abstract class PropagationBasedBuilder implements CGBuilder<Invoke, JMeth
             default -> throw new AnalysisException(
                     "Failed to resolve call site: " + callSite);
         };
+    }
+
+    protected abstract Set<JMethod> resolveVirtualCalleesOf(Invoke callSite);
+    protected Set<JMethod> resolveStaticCalleesOf(Invoke callSite) {
+        return Set.of(callSite.getMethodRef().resolve());
     }
 
     protected Set<JClass> getSubTypes(JClass cls) {

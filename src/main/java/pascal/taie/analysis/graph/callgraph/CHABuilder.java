@@ -38,6 +38,7 @@ public final class CHABuilder extends PropagationBasedBuilder {
 
     @Override
     protected void processMethod(JMethod method) {
+        callGraph.addReachableMethod(method);
         callGraph.getCallSitesIn(method).forEach(this::processCallSite);
     }
 

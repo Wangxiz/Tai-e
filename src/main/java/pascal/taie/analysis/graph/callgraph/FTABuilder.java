@@ -55,26 +55,27 @@ public final class FTABuilder extends AbstractXTABuilder {
     }
 
     @Override
-    protected boolean containsInMethod(JMethod method, JClass clazz) {
+    public boolean containsInMethod(JMethod method, JClass clazz) {
         return iClassesPerMethod.contains(method, clazz);
     }
     @Override
-    protected boolean updateClassesInMethod(JMethod method, JClass clazz) {
+    public boolean updateClassesInMethod(JMethod method, JClass clazz) {
         return iClassesPerMethod.put(method, clazz);
     }
-    protected Set<JClass> getClassesInMethod(JMethod method) {
+    @Override
+    public Set<JClass> getClassesInMethod(JMethod method) {
         return iClassesPerMethod.get(method);
     }
-
     @Override
-    protected boolean containsInField(JField field, JClass clazz) {
+    public boolean containsInField(JField field, JClass clazz) {
         return iClassesPerClass.contains(field.getDeclaringClass(), clazz);
     }
     @Override
-    protected boolean updateClassesInField(JField field, JClass clazz) {
+    public boolean updateClassesInField(JField field, JClass clazz) {
         return iClassesPerClass.put(field.getDeclaringClass(), clazz);
     }
-    protected Set<JClass> getClassesInField(JField field) {
+    @Override
+    public Set<JClass> getClassesInField(JField field) {
         return iClassesPerClass.get(field.getDeclaringClass());
     }
 

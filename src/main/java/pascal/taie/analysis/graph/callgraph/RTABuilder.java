@@ -57,22 +57,24 @@ public final class RTABuilder extends PropagationBasedBuilder {
 
     @Override
     protected void processMethod(JMethod method) {
+        callGraph.addReachableMethod(method);
         method.getIR().forEach(stmt -> {
             if (stmt instanceof New newStmt) {
-                processNewStmt(newStmt);
+                processNew(newStmt);
             }
         });
         callGraph.getCallSitesIn(method).forEach(this::processCallSite);
     }
-
     @Override
-    protected void processNewStmt(New stmt) {
+    protected void processNew(New stmt) {
         NewExp newExp = stmt.getRValue();
         if (newExp instanceof NewInstance newInstance) {
             JClass instanceClass = newInstance.getType().getJClass();
             if (!iClasses.contains(instanceClass)) {
-                iClasses.add(instanceClass);
-                resolvePending(instanceClass);
+                boolean changed = iClasses.add(instanceClass);
+                if (changed) {
+                    resolvePending(instanceClass);
+                }
             }
         }
     }

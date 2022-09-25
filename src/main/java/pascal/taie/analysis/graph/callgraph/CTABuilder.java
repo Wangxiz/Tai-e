@@ -53,26 +53,27 @@ public final class CTABuilder extends AbstractXTABuilder {
     }
 
     @Override
-    protected boolean containsInMethod(JMethod method, JClass clazz) {
+    public boolean containsInMethod(JMethod method, JClass clazz) {
         return iClassesPerClass.contains(method.getDeclaringClass(), clazz);
     }
     @Override
-    protected boolean updateClassesInMethod(JMethod method, JClass clazz) {
+    public boolean updateClassesInMethod(JMethod method, JClass clazz) {
         return iClassesPerClass.put(method.getDeclaringClass(), clazz);
     }
-    protected Set<JClass> getClassesInMethod(JMethod method) {
+    @Override
+    public Set<JClass> getClassesInMethod(JMethod method) {
         return iClassesPerClass.get(method.getDeclaringClass());
     }
-
     @Override
-    protected boolean containsInField(JField field, JClass clazz) {
+    public boolean containsInField(JField field, JClass clazz) {
         return iClassesPerClass.contains(field.getDeclaringClass(), clazz);
     }
     @Override
-    protected boolean updateClassesInField(JField field, JClass clazz) {
+    public boolean updateClassesInField(JField field, JClass clazz) {
         return iClassesPerClass.put(field.getDeclaringClass(), clazz);
     }
-    protected Set<JClass> getClassesInField(JField field) {
+    @Override
+    public Set<JClass> getClassesInField(JField field) {
         return iClassesPerClass.get(field.getDeclaringClass());
     }
 

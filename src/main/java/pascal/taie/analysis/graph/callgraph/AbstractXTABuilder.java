@@ -22,7 +22,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-public abstract class AbstractXTABuilder extends PropagationBasedBuilder {
+public abstract class AbstractXTABuilder extends PropagationBasedBuilder implements IXTABuilder {
 
     private MultiMap<JField, JClass> fieldSubTypes;
     private MultiMap<JMethod, JClass> paramSubTypes;
@@ -83,14 +83,6 @@ public abstract class AbstractXTABuilder extends PropagationBasedBuilder {
             return Set.of();
         }
     }
-
-    protected abstract boolean containsInMethod(JMethod method, JClass clazz);
-    protected abstract boolean updateClassesInMethod(JMethod method, JClass clazz);
-    protected abstract Set<JClass> getClassesInMethod(JMethod method);
-
-    protected abstract boolean containsInField(JField field, JClass clazz);
-    protected abstract boolean updateClassesInField(JField field, JClass clazz);
-    protected abstract Set<JClass> getClassesInField(JField field);
 
     protected void updateStores(JMethod method, JField field) {
         stores.put(method, field);
@@ -191,9 +183,10 @@ public abstract class AbstractXTABuilder extends PropagationBasedBuilder {
 
     @Override
     protected void processMethod(JMethod method) {
+        callGraph.addReachableMethod(method);
         method.getIR().forEach(stmt -> {
             if (stmt instanceof New newStmt) {
-                processNewStmt(newStmt);
+                processNew(newStmt);
             } else if (stmt instanceof StoreField storeField) {
                 processStoreField(method, storeField);
             } else if (stmt instanceof LoadField loadField) {
@@ -203,19 +196,7 @@ public abstract class AbstractXTABuilder extends PropagationBasedBuilder {
         callGraph.getCallSitesIn(method).forEach(this::processCallSite);
     }
     @Override
-    protected void processCallSite(Invoke callSite) {
-        JMethod caller = callSite.getContainer();
-        resolveCalleesOf(callSite).forEach(callee -> {
-            if (!callGraph.contains(callee)) {
-                workList.add(callee);
-            }
-            addCGEdge(callSite, callee);
-            propagateCallerToCallee(caller, callee);
-            propagateCalleeToCaller(callee, caller);
-        });
-    }
-    @Override
-    protected void processNewStmt(New stmt) {
+    protected void processNew(New stmt) {
         NewExp newExp = stmt.getRValue();
         JMethod method = stmt.getContainer();
         if (newExp instanceof NewInstance newInstance) {
@@ -228,6 +209,18 @@ public abstract class AbstractXTABuilder extends PropagationBasedBuilder {
                 }
             }
         }
+    }
+    @Override
+    protected void processCallSite(Invoke callSite) {
+        JMethod caller = callSite.getContainer();
+        resolveCalleesOf(callSite).forEach(callee -> {
+            if (!callGraph.contains(callee)) {
+                workList.add(callee);
+            }
+            addCGEdge(callSite, callee);
+            propagateCallerToCallee(caller, callee);
+            propagateCalleeToCaller(callee, caller);
+        });
     }
     protected void processStoreField(JMethod method, StoreField storeField) {
         JField field = storeField.getFieldRef().resolve();
