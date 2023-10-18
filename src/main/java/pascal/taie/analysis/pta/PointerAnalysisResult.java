@@ -23,6 +23,7 @@
 package pascal.taie.analysis.pta;
 
 import pascal.taie.analysis.graph.callgraph.CallGraph;
+import pascal.taie.analysis.graph.flowgraph.ObjectFlowGraph;
 import pascal.taie.analysis.pta.core.cs.element.ArrayIndex;
 import pascal.taie.analysis.pta.core.cs.element.CSCallSite;
 import pascal.taie.analysis.pta.core.cs.element.CSMethod;
@@ -32,7 +33,6 @@ import pascal.taie.analysis.pta.core.cs.element.InstanceField;
 import pascal.taie.analysis.pta.core.cs.element.StaticField;
 import pascal.taie.analysis.pta.core.heap.Obj;
 import pascal.taie.ir.exp.ArrayAccess;
-import pascal.taie.ir.exp.Exp;
 import pascal.taie.ir.exp.FieldAccess;
 import pascal.taie.ir.exp.InstanceFieldAccess;
 import pascal.taie.ir.exp.StaticFieldAccess;
@@ -50,16 +50,9 @@ import java.util.Set;
  * Represents results of pointer analysis.
  * This class provides various API for querying points-to sets of
  * different kinds of pointer-accessing expressions. For the expressions
- * that are not concerned (return value of {@link #isConcerned(Exp)} is false),
- * an empty set is returned.
+ * that are ignored by pointer analysis, an empty set is returned.
  */
 public interface PointerAnalysisResult extends ResultHolder {
-
-    /**
-     * @return @{code true} if the type of given expression is concerned
-     * in pointer analysis, otherwise {@code false}.
-     */
-    boolean isConcerned(Exp exp);
 
     /**
      * @return all reachable context-sensitive variables in the program.
@@ -128,6 +121,11 @@ public interface PointerAnalysisResult extends ResultHolder {
     Set<Obj> getPointsToSet(Var base, JField field);
 
     /**
+     * @return set of Obj pointed to by in given base.field.
+     */
+    Set<Obj> getPointsToSet(Obj base, JField field);
+
+    /**
      * @return set of Obj pointed to by given static field access, e.g., T.f.
      */
     Set<Obj> getPointsToSet(StaticFieldAccess access);
@@ -147,6 +145,11 @@ public interface PointerAnalysisResult extends ResultHolder {
      * The base is supposed to be of array type; parameter index is unused.
      */
     Set<Obj> getPointsToSet(Var base, Var index);
+
+    /**
+     * @return set of Obj pointed to by given array.
+     */
+    Set<Obj> getPointsToSet(Obj array);
 
     /**
      * @return {@code true} if two variables may be aliases.
@@ -172,4 +175,9 @@ public interface PointerAnalysisResult extends ResultHolder {
      * @return the resulting call graph (without contexts).
      */
     CallGraph<Invoke, JMethod> getCallGraph();
+
+    /**
+     * @return the resulting object flow graph.
+     */
+    ObjectFlowGraph getObjectFlowGraph();
 }

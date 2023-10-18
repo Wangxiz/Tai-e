@@ -34,14 +34,17 @@ import pascal.taie.language.type.Type;
 import pascal.taie.language.type.TypeSystem;
 import pascal.taie.util.Indexer;
 import pascal.taie.util.collection.Maps;
+import pascal.taie.util.collection.Streams;
 import pascal.taie.util.collection.TwoKeyMap;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * Manages data by maintaining the data and their context-sensitive
@@ -108,6 +111,11 @@ public class MapBasedCSManager implements CSManager {
     }
 
     @Override
+    public Stream<Pointer> pointers() {
+        return ptrManager.pointers();
+    }
+
+    @Override
     public CSObj getCSObj(Context heapContext, Obj obj) {
         return objManager.getCSObj(heapContext, obj);
     }
@@ -118,13 +126,21 @@ public class MapBasedCSManager implements CSManager {
     }
 
     @Override
+    public Collection<CSObj> getCSObjsOf(Obj obj) {
+        return objManager.getCSObjsOf(obj);
+    }
+
+    @Override
     public Indexer<CSObj> getObjectIndexer() {
         return objManager;
     }
 
     @Override
     public CSCallSite getCSCallSite(Context context, Invoke callSite) {
-        return callSites.computeIfAbsent(callSite, context, CSCallSite::new);
+        return callSites.computeIfAbsent(callSite, context, (cs, ctx) -> {
+            CSMethod container = mtdManager.getCSMethod(ctx, cs.getContainer());
+            return new CSCallSite(cs, ctx, container);
+        });
     }
 
     @Override
@@ -195,6 +211,14 @@ public class MapBasedCSManager implements CSManager {
 
         private Collection<ArrayIndex> getArrayIndexes() {
             return Collections.unmodifiableCollection(arrayIndexes.values());
+        }
+
+        private Stream<Pointer> pointers() {
+            return Streams.concat(
+                    getCSVars().stream(),
+                    getInstanceFields().stream(),
+                    getArrayIndexes().stream(),
+                    getStaticFields().stream());
         }
     }
 
@@ -268,15 +292,18 @@ public class MapBasedCSManager implements CSManager {
         private void storeCSObj(CSObj csObj, int index) {
             if (index >= objs.length) {
                 int newLength = Math.max(index + 1, (int) (objs.length * 1.5));
-                CSObj[] oldArray = objs;
-                objs = new CSObj[newLength];
-                System.arraycopy(oldArray, 0, objs, 0, oldArray.length);
+                objs = Arrays.copyOf(objs, newLength);
             }
             objs[index] = csObj;
         }
 
         Collection<CSObj> getObjects() {
             return objMap.values();
+        }
+
+        Collection<CSObj> getCSObjsOf(Obj obj) {
+            var csObjs = objMap.get(obj);
+            return csObjs != null ? csObjs.values() : Set.of();
         }
 
         @Override

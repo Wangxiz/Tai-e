@@ -22,125 +22,50 @@
 
 package pascal.taie.analysis.pta;
 
-import org.junit.Test;
+import org.junit.jupiter.params.ParameterizedTest;
 import pascal.taie.analysis.Tests;
+import pascal.taie.util.MultiStringsSource;
 
 public class TaintTest {
 
     static final String DIR = "taint";
 
-    @Test
-    public void testArrayTaint() {
-        Tests.testPTA(DIR, "ArrayTaint",
-                "taint-config:src/test/resources/pta/taint/taint-config.yml");
+    static final String TAINT_CONFIG_PREFIX = "taint-config:src/test/resources/pta/taint/";
+
+    static final String TAINT_CONFIG = TAINT_CONFIG_PREFIX + "taint-config.yml";
+
+    @ParameterizedTest
+    @MultiStringsSource({"ArrayTaint", TAINT_CONFIG})
+    @MultiStringsSource({"CharArray", TAINT_CONFIG})
+    @MultiStringsSource({"FieldTaint", TAINT_CONFIG})
+    @MultiStringsSource({"LinkedQueue", TAINT_CONFIG})
+    @MultiStringsSource({"CSTaint", "cs:1-obj;" + TAINT_CONFIG})
+    @MultiStringsSource({"TwoObjectTaint", "cs:2-obj;" + TAINT_CONFIG})
+    @MultiStringsSource({"TaintCorner", TAINT_CONFIG})
+    @MultiStringsSource({"CycleTaint", TAINT_CONFIG})
+    @MultiStringsSource({"ComplexTaint", TAINT_CONFIG})
+    @MultiStringsSource({"SimpleTaint", TAINT_CONFIG})
+    @MultiStringsSource({"ArgToResult", TAINT_CONFIG})
+    @MultiStringsSource({"BaseToResult", TAINT_CONFIG})
+    @MultiStringsSource({"StringAppend", TAINT_CONFIG})
+    @MultiStringsSource({"OneCallTaint", "cs:1-call;" + TAINT_CONFIG})
+    @MultiStringsSource({"InterTaintTransfer", "cs:2-call;" + TAINT_CONFIG})
+    @MultiStringsSource({"TaintInList", "cs:2-obj;" + TAINT_CONFIG})
+    @MultiStringsSource({"BackPropagation", TAINT_CONFIG})
+    @MultiStringsSource({"CSBackPropagation", "cs:1-obj;" + TAINT_CONFIG})
+    @MultiStringsSource({"StaticTaintTransfer", TAINT_CONFIG_PREFIX
+            + "taint-config-static-taint-transfer.yml"})
+    @MultiStringsSource({"InstanceSourceSink", TAINT_CONFIG_PREFIX
+            + "taint-config-instance-source-sink.yml"})
+    @MultiStringsSource({"ArrayFieldTransfer", TAINT_CONFIG_PREFIX
+            + "taint-config-array-field-transfer.yml"})
+    @MultiStringsSource({"TaintParam", TAINT_CONFIG_PREFIX
+            + "taint-config-param-source.yml"})
+    @MultiStringsSource({"CallSiteMode", TAINT_CONFIG_PREFIX
+            + "taint-config-call-site-model.yml"})
+    @MultiStringsSource({"Java9StringConcat", TAINT_CONFIG})
+    void test(String mainClass, String opts) {
+        Tests.testPTA(DIR, mainClass, opts);
     }
 
-    @Test
-    public void testCharArray() {
-        Tests.testPTA(DIR, "CharArray",
-                "taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
-
-    @Test
-    public void testFieldTaint() {
-        Tests.testPTA(DIR, "FieldTaint",
-                "taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
-
-    @Test
-    public void testLinkedQueue() {
-        Tests.testPTA(DIR, "LinkedQueue",
-                "taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
-
-    @Test
-    public void testCSTaint() {
-        Tests.testPTA(DIR, "CSTaint",
-                "cs:1-obj;taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
-
-    @Test
-    public void testTwoObjectTaint() {
-        Tests.testPTA(DIR, "TwoObjectTaint",
-                "cs:2-obj;taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
-
-    @Test
-    public void testStaticTaintTransfer() {
-        Tests.testPTA(DIR, "StaticTaintTransfer",
-                "taint-config:src/test/resources/pta/taint/taint-config-static-taint-transfer.yml");
-    }
-
-    @Test
-    public void testInstanceSourceSink() {
-        Tests.testPTA(DIR, "InstanceSourceSink",
-                "taint-config:src/test/resources/pta/taint/taint-config-instance-source-sink.yml");
-    }
-
-    @Test
-    public void testTaintCorner() {
-        Tests.testPTA(DIR, "TaintCorner",
-                "taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
-
-    @Test
-    public void testCycleTaint() {
-        Tests.testPTA(DIR, "CycleTaint",
-                "taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
-
-
-    @Test
-    public void testComplexTaint() {
-        Tests.testPTA(DIR, "ComplexTaint",
-                "taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
-
-    @Test
-    public void testTaintTransferEdge() {
-        Tests.testPTA(DIR, "TaintTransferEdge",
-                "taint-config:src/test/resources/pta/taint/taint-config-taint-transfer-edge.yml");
-    }
-
-    @Test
-    public void testSimpleTaint() {
-        Tests.testPTA(DIR, "SimpleTaint",
-                "taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
-
-    @Test
-    public void testArgToResult() {
-        Tests.testPTA(DIR, "ArgToResult",
-                "taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
-
-    @Test
-    public void testBaseToResult() {
-        Tests.testPTA(DIR, "BaseToResult",
-                "taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
-
-    @Test
-    public void testStringAppend() {
-        Tests.testPTA(DIR, "StringAppend",
-                "taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
-
-    @Test
-    public void testOneCallTaint() {
-        Tests.testPTA(DIR, "OneCallTaint",
-                "cs:1-call;taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
-
-    @Test
-    public void testInterTaintTransfer() {
-        Tests.testPTA(DIR, "InterTaintTransfer",
-                "cs:2-call;taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
-
-    @Test
-    public void testTaintInList() {
-        Tests.testPTA(DIR, "TaintInList",
-                "cs:2-obj;taint-config:src/test/resources/pta/taint/taint-config.yml");
-    }
 }

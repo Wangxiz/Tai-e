@@ -34,7 +34,7 @@ import java.util.Optional;
  */
 public class MockObj extends Obj {
 
-    private final String desc;
+    private final Descriptor desc;
 
     private final Object alloc;
 
@@ -42,14 +42,18 @@ public class MockObj extends Obj {
 
     private final JMethod container;
 
-    public MockObj(String desc, Object alloc, Type type, JMethod container) {
+    private final boolean isFunctional;
+
+    public MockObj(Descriptor desc, Object alloc, Type type,
+                   JMethod container, boolean isFunctional) {
         this.desc = desc;
         this.alloc = alloc;
         this.type = type;
         this.container = container;
+        this.isFunctional = isFunctional;
     }
 
-    public String getDescription() {
+    public Descriptor getDescriptor() {
         return desc;
     }
 
@@ -75,6 +79,11 @@ public class MockObj extends Obj {
     }
 
     @Override
+    public boolean isFunctional() {
+        return isFunctional;
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;
@@ -95,7 +104,7 @@ public class MockObj extends Obj {
 
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder(desc).append('{');
+        StringBuilder sb = new StringBuilder(desc.string()).append('{');
         sb.append("alloc=").append(alloc).append(",");
         sb.append("type=").append(type);
         if (container != null) {

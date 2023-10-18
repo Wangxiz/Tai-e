@@ -24,6 +24,7 @@ package pascal.taie.util.graph;
 
 import pascal.taie.util.collection.Views;
 
+import java.io.Serializable;
 import java.util.Iterator;
 import java.util.Set;
 
@@ -32,24 +33,28 @@ import java.util.Set;
  *
  * @param <N> type of nodes
  */
-public interface Graph<N> extends Iterable<N> {
+public interface Graph<N> extends Iterable<N>, Serializable {
 
     /**
-     * @return true if this graph has given node, otherwise false.
+     * @return {@code true} if this graph has given node, otherwise {@code false}.
      */
-    boolean hasNode(N node);
+    default boolean hasNode(N node) {
+        return getNodes().contains(node);
+    }
 
     /**
-     * @return true if this graph has an edge from given source to target,
-     * otherwise false.
+     * @return {@code true} if this graph has an edge from given source to target,
+     * otherwise {@code false}.
      */
-    boolean hasEdge(N source, N target);
+    default boolean hasEdge(N source, N target) {
+        return getSuccsOf(source).contains(target);
+    }
 
     /**
      * @return true if this graph has the given edge, otherwise false.
      */
     default boolean hasEdge(Edge<N> edge) {
-        return hasEdge(edge.getSource(), edge.getTarget());
+        return hasEdge(edge.source(), edge.target());
     }
 
     /**
@@ -67,7 +72,7 @@ public interface Graph<N> extends Iterable<N> {
      */
     default Set<? extends Edge<N>> getInEdgesOf(N node) {
         return Views.toMappedSet(getPredsOf(node),
-                pred -> new AbstractEdge<N>(pred, node) {});
+                pred -> new SimpleEdge<>(pred, node));
     }
 
     /**
@@ -82,7 +87,7 @@ public interface Graph<N> extends Iterable<N> {
      */
     default Set<? extends Edge<N>> getOutEdgesOf(N node) {
         return Views.toMappedSet(getSuccsOf(node),
-                succ -> new AbstractEdge<N>(node, succ) {});
+                succ -> new SimpleEdge<>(node, succ));
     }
 
     /**

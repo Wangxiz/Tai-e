@@ -22,6 +22,7 @@
 
 package pascal.taie.analysis.pta.core.cs.element;
 
+import pascal.taie.analysis.graph.flowgraph.FlowKind;
 import pascal.taie.analysis.pta.core.solver.PointerFlowEdge;
 import pascal.taie.analysis.pta.pts.PointsToSet;
 import pascal.taie.language.type.Type;
@@ -29,6 +30,7 @@ import pascal.taie.util.Indexable;
 
 import javax.annotation.Nullable;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 /**
@@ -56,6 +58,16 @@ public interface Pointer extends Indexable {
     void setPointsToSet(PointsToSet pointsToSet);
 
     /**
+     * Adds filter to filter out objects pointed to by this pointer.
+     */
+    void addFilter(Predicate<CSObj> filter);
+
+    /**
+     * @return all filters added to this pointer.
+     */
+    Set<Predicate<CSObj>> getFilters();
+
+    /**
      * Safely retrieves context-sensitive objects pointed to by this pointer.
      *
      * @return an empty set if {@code pointer} has not been associated
@@ -74,11 +86,11 @@ public interface Pointer extends Indexable {
     Stream<CSObj> objects();
 
     /**
-     * @param edge an out edge of this pointer
-     * @return true if new out edge was added to this pointer as a result
-     * of the call, otherwise false.
+     * Adds a pointer flow edge {@code source} -> {@code target}, and
+     * returns the edge. If the edge already exists and {@code kind}
+     * is not {@link FlowKind#OTHER}, {@code null} is returned.
      */
-    boolean addOutEdge(PointerFlowEdge edge);
+    PointerFlowEdge getOrAddEdge(FlowKind kind, Pointer source, Pointer target);
 
     /**
      * @return out edges of this pointer in pointer flow graph.

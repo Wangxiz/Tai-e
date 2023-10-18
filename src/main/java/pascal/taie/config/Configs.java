@@ -22,7 +22,6 @@
 
 package pascal.taie.config;
 
-import java.io.File;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.Objects;
@@ -33,22 +32,6 @@ import java.util.Objects;
 public final class Configs {
 
     private Configs() {
-    }
-
-    /**
-     * Default directory for Tai-e's output.
-     */
-    private final static File outputDir = new File("output");
-
-    static {
-        if (!outputDir.exists()) {
-            // Ensure the existence of output directory.
-            outputDir.mkdirs();
-        }
-    }
-
-    public static File getOutputDir() {
-        return outputDir;
     }
 
     /**
@@ -76,20 +59,6 @@ public final class Configs {
     }
 
     /**
-     * @return default file for outputting options.
-     */
-    static File getDefaultOptions() {
-        return new File(outputDir, "options.yml");
-    }
-
-    /**
-     * @return default file for outputting analysis plan.
-     */
-    public static File getDefaultPlan() {
-        return new File(outputDir, "tai-e-plan.yml");
-    }
-
-    /**
      * Extracts analysis id from given require item.
      */
     static String extractId(String require) {
@@ -111,8 +80,8 @@ public final class Configs {
      * Checks if options satisfy the given conditions.
      * Examples of conditions:
      * a=b
-     * a=b&x=y
-     * a=b|c|d&x=y
+     * a=b&amp;x=y
+     * a=b|c|d&amp;x=y
      * TODO: comprehensive error handling for invalid conditions
      */
     static boolean satisfyConditions(String conditions, AnalysisOptions options) {

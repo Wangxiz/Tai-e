@@ -118,8 +118,12 @@ public class MethodRef extends MemberRef {
     /**
      * Caches the resolved method for this reference to avoid redundant
      * method resolution.
+     *
+     * @see #resolve()
+     * @see #resolveNullable()
      */
-    private JMethod method;
+    @Nullable
+    private transient JMethod method;
 
     public static MethodRef get(
             JClass declaringClass, String name,
@@ -191,7 +195,7 @@ public class MethodRef extends MemberRef {
             method = World.get().getClassHierarchy()
                     .resolveMethod(this);
             if (method == null && resolveFailures.add(this)) {
-                logger.warn("Failed to resolve {}", this);
+                logger.debug("Failed to resolve {}", this);
             }
         }
         return method;

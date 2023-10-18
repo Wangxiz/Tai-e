@@ -26,7 +26,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import pascal.taie.analysis.graph.callgraph.CallGraph;
 import pascal.taie.analysis.graph.cfg.CFG;
-import pascal.taie.analysis.graph.cfg.Edge;
+import pascal.taie.analysis.graph.cfg.CFGEdge;
 import pascal.taie.ir.exp.Var;
 import pascal.taie.ir.stmt.Invoke;
 import pascal.taie.ir.stmt.Return;
@@ -39,7 +39,6 @@ import pascal.taie.util.collection.Sets;
 import pascal.taie.util.collection.Views;
 
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -53,7 +52,7 @@ class DefaultICFG extends AbstractICFG<JMethod, Stmt> {
 
     private final MultiMap<Stmt, ICFGEdge<Stmt>> outEdges = Maps.newMultiMap();
 
-    private final Map<Stmt, CFG<Stmt>> stmtToCFG = new LinkedHashMap<>();
+    private final Map<Stmt, CFG<Stmt>> stmtToCFG = Maps.newLinkedHashMap();
 
     DefaultICFG(CallGraph<Stmt, JMethod> callGraph) {
         super(callGraph);
@@ -75,7 +74,7 @@ class DefaultICFG extends AbstractICFG<JMethod, Stmt> {
                             new CallToReturnEdge<>(edge) :
                             new NormalEdge<>(edge);
                     outEdges.put(stmt, local);
-                    inEdges.put(edge.getTarget(), local);
+                    inEdges.put(edge.target(), local);
                 });
                 if (isCallSite(stmt)) {
                     getCalleesOf(stmt).forEach(callee -> {
@@ -98,8 +97,8 @@ class DefaultICFG extends AbstractICFG<JMethod, Stmt> {
                         // the real return and excepting Stmts, and attach
                         // them to the ReturnEdge.
                         getCFGOf(callee).getInEdgesOf(exit).forEach(retEdge -> {
-                            if (retEdge.getKind() == Edge.Kind.RETURN) {
-                                Return ret = (Return) retEdge.getSource();
+                            if (retEdge.getKind() == CFGEdge.Kind.RETURN) {
+                                Return ret = (Return) retEdge.source();
                                 if (ret.getValue() != null) {
                                     retVars.add(ret.getValue());
                                 }
@@ -157,25 +156,20 @@ class DefaultICFG extends AbstractICFG<JMethod, Stmt> {
     }
 
     @Override
-    public boolean hasNode(Stmt stmt) {
-        return stmtToCFG.containsKey(stmt);
-    }
-
-    @Override
     public boolean hasEdge(Stmt source, Stmt target) {
         return getOutEdgesOf(source)
                 .stream()
-                .anyMatch(edge -> edge.getTarget().equals(target));
+                .anyMatch(edge -> edge.target().equals(target));
     }
 
     @Override
     public Set<Stmt> getPredsOf(Stmt stmt) {
-        return Views.toMappedSet(getInEdgesOf(stmt), ICFGEdge::getSource);
+        return Views.toMappedSet(getInEdgesOf(stmt), ICFGEdge::source);
     }
 
     @Override
     public Set<Stmt> getSuccsOf(Stmt stmt) {
-        return Views.toMappedSet(getOutEdgesOf(stmt), ICFGEdge::getTarget);
+        return Views.toMappedSet(getOutEdgesOf(stmt), ICFGEdge::target);
     }
 
     @Override

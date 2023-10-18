@@ -25,6 +25,7 @@ package pascal.taie.util.collection;
 import pascal.taie.util.Indexer;
 
 import javax.annotation.Nonnull;
+import java.io.Serializable;
 import java.util.AbstractMap;
 import java.util.AbstractSet;
 import java.util.Arrays;
@@ -46,9 +47,7 @@ import java.util.Set;
  * If {@code values[index]} is {@code null}, it means that the corresponding
  * key is absent in this map. Hence, it does not permit {@code null} values.
  * <p>
- * The capacity of each map is <b>fixed</b>, and only the numbers in [0, capacity)
- * are considered as valid index for keys.
- * This map is designed for maps that close to the size of the universe.
+ * This implementation is designed for maps whose size is close to the universe.
  *
  * @param <K> the type of keys maintained by this map
  * @param <V> the type of mapped values
@@ -56,23 +55,30 @@ import java.util.Set;
  * <p>
  * TODO: add mod count
  */
-public class IndexMap<K, V> extends AbstractMap<K, V> {
+public class IndexMap<K, V> extends AbstractMap<K, V>
+        implements Serializable {
 
     private static final String NULL_VALUE_MSG = "IndexMap does not permit null values";
 
     private final Indexer<K> indexer;
 
-    private final V[] values;
+    private V[] values;
 
     private int size = 0;
 
-    private Set<Entry<K, V>> entrySet;
+    /**
+     * The cache of {@link IndexMap#entrySet()}.
+     */
+    private transient Set<Entry<K, V>> entrySet;
 
-    private Set<K> keySet;
+    /**
+     * The cache of {@link IndexMap#keySet()}.
+     */
+    private transient Set<K> keySet;
 
-    public IndexMap(Indexer<K> indexer, int capacity) {
+    public IndexMap(Indexer<K> indexer, int initialCapacity) {
         this.indexer = indexer;
-        this.values = (V[]) new Object[capacity];
+        this.values = (V[]) new Object[initialCapacity];
     }
 
     public int capacity() {
@@ -109,7 +115,8 @@ public class IndexMap<K, V> extends AbstractMap<K, V> {
     public V put(K key, V value) {
         Objects.requireNonNull(value, NULL_VALUE_MSG);
         int index = indexer.getIndex(key);
-        if (isValidIndex(index)) {
+        if (index >= 0) {
+            ensureCapacity(index);
             V oldV = values[index];
             values[index] = value;
             if (oldV == null) {
@@ -117,8 +124,16 @@ public class IndexMap<K, V> extends AbstractMap<K, V> {
             }
             return oldV;
         } else {
-            throw new IllegalArgumentException(
-                    key + " cannot be properly indexed by " + indexer);
+            throw new IllegalArgumentException("index of " + key +
+                    " is negative: " + index);
+        }
+    }
+
+    private void ensureCapacity(int index) {
+        int oldCapacity = values.length;
+        if (index >= oldCapacity) {
+            int newCapacity = Math.max(index + 1, (int) (oldCapacity * 1.5));
+            values = Arrays.copyOf(values, newCapacity);
         }
     }
 

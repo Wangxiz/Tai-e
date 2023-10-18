@@ -22,30 +22,35 @@
 
 package pascal.taie.analysis.pta.core.solver;
 
+import pascal.taie.analysis.graph.flowgraph.FlowKind;
+import pascal.taie.analysis.pta.core.cs.element.CSManager;
 import pascal.taie.analysis.pta.core.cs.element.Pointer;
-import pascal.taie.util.collection.Sets;
 import pascal.taie.util.collection.Views;
 import pascal.taie.util.graph.Edge;
 import pascal.taie.util.graph.Graph;
 
-import java.util.Collections;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Represents pointer flow graph in context-sensitive pointer analysis.
  */
 public class PointerFlowGraph implements Graph<Pointer> {
 
-    private final Set<Pointer> pointers = Sets.newSet();
+    private final CSManager csManager;
 
-    public boolean addEdge(PointerFlowEdge edge) {
-        if (edge.getSource().addOutEdge(edge)) {
-            pointers.add(edge.getSource());
-            pointers.add(edge.getTarget());
-            return true;
-        } else {
-            return false;
-        }
+    PointerFlowGraph(CSManager csManager) {
+        this.csManager = csManager;
+    }
+
+    /**
+     * Adds a pointer flow edge {@code source} -> {@code target}, and
+     * returns the edge. If the edge already exists and {@code kind}
+     * is not {@link FlowKind#OTHER}, {@code null} is returned.
+     */
+    public PointerFlowEdge getOrAddEdge(FlowKind kind, Pointer source, Pointer target) {
+        return source.getOrAddEdge(kind, source, target);
     }
 
     @Override
@@ -58,18 +63,8 @@ public class PointerFlowGraph implements Graph<Pointer> {
         return pointer.getOutEdges();
     }
 
-    public Set<Pointer> getPointers() {
-        return Collections.unmodifiableSet(pointers);
-    }
-
-    @Override
-    public boolean hasNode(Pointer node) {
-        return pointers.contains(node);
-    }
-
-    @Override
-    public boolean hasEdge(Pointer source, Pointer target) {
-        return getSuccsOf(source).contains(target);
+    public Stream<Pointer> pointers() {
+        return csManager.pointers();
     }
 
     @Override
@@ -80,11 +75,11 @@ public class PointerFlowGraph implements Graph<Pointer> {
     @Override
     public Set<Pointer> getSuccsOf(Pointer node) {
         return Views.toMappedSet(node.getOutEdges(),
-                PointerFlowEdge::getTarget);
+                PointerFlowEdge::target);
     }
 
     @Override
     public Set<Pointer> getNodes() {
-        return getPointers();
+        return pointers().collect(Collectors.toUnmodifiableSet());
     }
 }

@@ -22,28 +22,27 @@
 
 package pascal.taie.analysis.graph.cfg;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import pascal.taie.Main;
 import pascal.taie.analysis.exception.ThrowAnalysis;
 
 public class CFGTest {
 
     @Test
-    public void testCFG() {
+    void testCFG() {
         test("CFG", "explicit");
     }
 
     @Test
-    public void testException() {
+    void testException() {
         test("Exceptions", "all");
     }
 
     private static void test(String main, String exception) {
-        String[] args = new String[]{
-                "-pp", "-cp", "src/test/resources/controlflow", "-m", main,
+        Main.main(
+                "-pp", "-cp", "src/test/resources/controlflow", "--input-classes", main,
                 "-a", ThrowAnalysis.ID + "=exception:" + exception,
                 "-a", CFGBuilder.ID + "=exception:" + exception + ";dump:true"
-        };
-        Main.main(args);
+        );
     }
 }

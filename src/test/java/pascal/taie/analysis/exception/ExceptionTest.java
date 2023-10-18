@@ -22,7 +22,7 @@
 
 package pascal.taie.analysis.exception;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import pascal.taie.Main;
 import pascal.taie.World;
 import pascal.taie.ir.IR;
@@ -41,26 +41,25 @@ public class ExceptionTest {
     private static final String MAIN = "Exceptions";
 
     @Test
-    public void testCatchImplicit() {
+    void testCatchImplicit() {
         test("explicit" /*"all"*/, "implicitCaught", "implicitUncaught");
     }
 
     @Test
-    public void testCatchThrow() {
+    void testCatchThrow() {
         test("all", "throwCaught", "throwUncaught", "nestedThrowCaught");
     }
 
     @Test
-    public void testCatchDeclared() {
+    void testCatchDeclared() {
         test("explicit", "declaredCaught", "declaredUncaught");
     }
 
     private static void test(String exception, String... methodNames) {
-        String[] args = new String[]{
+        Main.main(
                 "-pp", "-cp", CP, "-m", MAIN,
                 "-a", ThrowAnalysis.ID + "=exception:" + exception
-        };
-        Main.main(args);
+        );
         JClass c = World.get().getClassHierarchy().getClass(MAIN);
         for (String methodName : methodNames) {
             JMethod m = c.getDeclaredMethod(methodName);

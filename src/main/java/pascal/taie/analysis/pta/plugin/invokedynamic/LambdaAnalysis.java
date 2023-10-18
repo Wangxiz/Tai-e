@@ -23,6 +23,7 @@
 package pascal.taie.analysis.pta.plugin.invokedynamic;
 
 import pascal.taie.analysis.graph.callgraph.Edge;
+import pascal.taie.analysis.graph.flowgraph.FlowKind;
 import pascal.taie.analysis.pta.core.cs.context.Context;
 import pascal.taie.analysis.pta.core.cs.element.CSCallSite;
 import pascal.taie.analysis.pta.core.cs.element.CSManager;
@@ -30,19 +31,20 @@ import pascal.taie.analysis.pta.core.cs.element.CSMethod;
 import pascal.taie.analysis.pta.core.cs.element.CSObj;
 import pascal.taie.analysis.pta.core.cs.element.CSVar;
 import pascal.taie.analysis.pta.core.cs.selector.ContextSelector;
+import pascal.taie.analysis.pta.core.heap.Descriptor;
 import pascal.taie.analysis.pta.core.heap.HeapModel;
 import pascal.taie.analysis.pta.core.heap.MockObj;
 import pascal.taie.analysis.pta.core.heap.Obj;
-import pascal.taie.analysis.pta.core.solver.PointerFlowEdge;
 import pascal.taie.analysis.pta.core.solver.Solver;
 import pascal.taie.analysis.pta.plugin.Plugin;
+import pascal.taie.analysis.pta.plugin.util.CSObjs;
 import pascal.taie.analysis.pta.pts.PointsToSet;
-import pascal.taie.ir.IR;
 import pascal.taie.ir.exp.InvokeDynamic;
 import pascal.taie.ir.exp.MethodHandle;
 import pascal.taie.ir.exp.Var;
 import pascal.taie.ir.proginfo.MethodRef;
 import pascal.taie.ir.stmt.Invoke;
+import pascal.taie.ir.stmt.Stmt;
 import pascal.taie.language.classes.ClassHierarchy;
 import pascal.taie.language.classes.JMethod;
 import pascal.taie.language.classes.Signatures;
@@ -54,19 +56,18 @@ import pascal.taie.util.collection.MultiMap;
 
 import javax.annotation.Nullable;
 import java.util.List;
-import java.util.stream.Stream;
 
 public class LambdaAnalysis implements Plugin {
 
     /**
-     * Description for lambda functional objects.
+     * Descriptor for lambda functional objects.
      */
-    private static final String LAMBDA_DESC = "LambdaObj";
+    private static final Descriptor LAMBDA_DESC = () -> "LambdaObj";
 
     /**
-     * Description for objects created by lambda constructor.
+     * Descriptor for objects created by lambda constructor.
      */
-    private static final String LAMBDA_NEW_DESC = "LambdaConstructedObj";
+    private static final Descriptor LAMBDA_NEW_DESC = () -> "LambdaConstructedObj";
 
     private Solver solver;
 
@@ -100,29 +101,33 @@ public class LambdaAnalysis implements Plugin {
     }
 
     @Override
-    public void onNewMethod(JMethod method) {
-        extractLambdaMetaFactories(method.getIR()).forEach(invoke -> {
+    public void onNewStmt(Stmt stmt, JMethod container) {
+        if (stmt instanceof Invoke invoke &&
+                invoke.isDynamic() &&
+                isLambdaMetaFactory(invoke)) {
             InvokeDynamic indy = (InvokeDynamic) invoke.getInvokeExp();
             Type type = indy.getMethodType().getReturnType();
-            JMethod container = invoke.getContainer();
             // record lambda meta factories of new reachable methods
             lambdaObjs.put(container,
                     heapModel.getMockObj(LAMBDA_DESC, invoke, type, container));
-        });
-    }
-
-    private static Stream<Invoke> extractLambdaMetaFactories(IR ir) {
-        return ir.invokes(true)
-                .filter(Invoke::isDynamic)
-                .filter(LambdaAnalysis::isLambdaMetaFactory);
+        }
     }
 
     static boolean isLambdaMetaFactory(Invoke invoke) {
+        // Declaring class of bootstrap method reference may be phantom
+        // (looks like an issue of current (soot-based) front end),
+        // thus we use resolveNullable() to avoid exception.
+        // TODO: change to resolve() after using new front end
         JMethod bsm = ((InvokeDynamic) invoke.getInvokeExp())
-                .getBootstrapMethodRef().resolve();
-        String bsmSig = bsm.getSignature();
-        return bsmSig.equals(Signatures.LAMBDA_METAFACTORY) ||
-                bsmSig.equals(Signatures.LAMBDA_ALTMETAFACTORY);
+                .getBootstrapMethodRef()
+                .resolveNullable();
+        if (bsm != null) {
+            String bsmSig = bsm.getSignature();
+            return bsmSig.equals(Signatures.LAMBDA_METAFACTORY) ||
+                    bsmSig.equals(Signatures.LAMBDA_ALTMETAFACTORY);
+        } else {
+            return false;
+        }
     }
 
     @Override
@@ -143,7 +148,7 @@ public class LambdaAnalysis implements Plugin {
 
     @Override
     public void onUnresolvedCall(CSObj recv, Context context, Invoke invoke) {
-        if (!isLambdaObj(recv.getObject())) {
+        if (!CSObjs.hasDescriptor(recv, LAMBDA_DESC)) {
             return;
         }
         MockObj lambdaObj = (MockObj) recv.getObject();
@@ -211,11 +216,6 @@ public class LambdaAnalysis implements Plugin {
         }
     }
 
-    private static boolean isLambdaObj(Obj obj) {
-        return obj instanceof MockObj mockObj &&
-                mockObj.getDescription().equals(LAMBDA_DESC);
-    }
-
     /**
      * @return the MethodHandle to the target method from invokedynamic.
      */
@@ -238,7 +238,12 @@ public class LambdaAnalysis implements Plugin {
             // pass receiver object to 'this' variable of callee
             solver.addVarPointsTo(calleeCtx, callee.getIR().getThis(), recvObj);
         } else { // otherwise, callee is static method
-            callee = targetRef.resolve();
+            callee = targetRef.resolveNullable();
+            if (callee == null) {
+                // this may happen in special cases, e.g.,
+                // when the declaring class of targetRef is phantom class
+                return;
+            }
             calleeCtx = selector.selectContext(csCallSite, callee);
         }
         LambdaCallEdge callEdge = new LambdaCallEdge(csCallSite,
@@ -276,7 +281,7 @@ public class LambdaAnalysis implements Plugin {
                         csManager.getCSVar(lambdaContext, capturedArgs.get(i)),
                         csManager.getCSVar(calleeContext, targetParams.get(j)),
                         // filter spurious objects caused by imprecise lambda objects
-                        PointerFlowEdge.Kind.PARAMETER_PASSING,
+                        FlowKind.PARAMETER_PASSING,
                         targetParams.get(j).getType());
             }
             // pass arguments from actual invocation site
@@ -299,7 +304,7 @@ public class LambdaAnalysis implements Plugin {
                         csManager.getCSVar(callerContext, actualArgs.get(i)),
                         csManager.getCSVar(calleeContext, targetParams.get(j)),
                         // filter spurious objects caused by imprecise lambda objects
-                        PointerFlowEdge.Kind.PARAMETER_PASSING, targetParams.get(j).getType()
+                        FlowKind.PARAMETER_PASSING, targetParams.get(j).getType()
                 );
             }
             // pass return value
@@ -310,7 +315,7 @@ public class LambdaAnalysis implements Plugin {
                     CSVar csRet = csManager.getCSVar(calleeContext, ret);
                     solver.addPFGEdge(csRet, csResult,
                             // filter spurious objects caused by imprecise lambda objects
-                            PointerFlowEdge.Kind.RETURN, result.getType());
+                            FlowKind.RETURN, result.getType());
                 });
             }
         }

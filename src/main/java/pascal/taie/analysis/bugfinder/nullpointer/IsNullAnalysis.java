@@ -26,31 +26,24 @@ import pascal.taie.analysis.dataflow.analysis.AbstractDataflowAnalysis;
 import pascal.taie.analysis.dataflow.analysis.AnalysisDriver;
 import pascal.taie.analysis.dataflow.analysis.DataflowAnalysis;
 import pascal.taie.analysis.graph.cfg.CFG;
-import pascal.taie.analysis.graph.cfg.Edge;
+import pascal.taie.analysis.graph.cfg.CFGEdge;
 import pascal.taie.config.AnalysisConfig;
 import pascal.taie.ir.IR;
-import pascal.taie.ir.exp.ArrayLengthExp;
 import pascal.taie.ir.exp.ConditionExp;
-import pascal.taie.ir.exp.InstanceFieldAccess;
-import pascal.taie.ir.exp.InvokeInstanceExp;
 import pascal.taie.ir.exp.NullLiteral;
 import pascal.taie.ir.exp.ReferenceLiteral;
 import pascal.taie.ir.exp.Var;
 import pascal.taie.ir.stmt.AssignLiteral;
+import pascal.taie.ir.stmt.Cast;
 import pascal.taie.ir.stmt.Copy;
 import pascal.taie.ir.stmt.DefinitionStmt;
 import pascal.taie.ir.stmt.If;
 import pascal.taie.ir.stmt.Invoke;
 import pascal.taie.ir.stmt.LoadArray;
 import pascal.taie.ir.stmt.LoadField;
-import pascal.taie.ir.stmt.Monitor;
 import pascal.taie.ir.stmt.New;
 import pascal.taie.ir.stmt.Stmt;
 import pascal.taie.ir.stmt.StmtVisitor;
-import pascal.taie.ir.stmt.StoreArray;
-import pascal.taie.ir.stmt.StoreField;
-import pascal.taie.ir.stmt.Throw;
-import pascal.taie.ir.stmt.Unary;
 import pascal.taie.language.annotation.Annotation;
 import pascal.taie.language.classes.ClassNames;
 import pascal.taie.language.classes.JMethod;
@@ -58,9 +51,11 @@ import pascal.taie.language.type.ArrayType;
 import pascal.taie.language.type.ClassType;
 import pascal.taie.language.type.ReferenceType;
 
+import java.util.List;
+
 public class IsNullAnalysis extends AnalysisDriver<Stmt, IsNullFact> {
 
-    public static final String ID = "isnull";
+    public static final String ID = "is-null";
 
     public IsNullAnalysis(AnalysisConfig config) {
         super(config);
@@ -92,10 +87,10 @@ public class IsNullAnalysis extends AnalysisDriver<Stmt, IsNullFact> {
             ir.getParams()
                     .stream()
                     .filter(var -> var.getType() instanceof ReferenceType)
-                    .forEach(p -> entryFact.update(p, IsNullValue.nonReportingNotNullValue()));
+                    .forEach(p -> entryFact.update(p, IsNullValue.UNKNOWN));
 
             if (ir.getThis() != null) {
-                entryFact.update(ir.getThis(), IsNullValue.nonNullValue());
+                entryFact.update(ir.getThis(), IsNullValue.NONNULL);
             }
 
             // use annotation info
@@ -105,15 +100,15 @@ public class IsNullAnalysis extends AnalysisDriver<Stmt, IsNullFact> {
                     continue;
                 }
 
-                IsNullValue value = null;
+                IsNullValue value;
                 NullnessAnnotation nullnessAnnotation =
                         NullnessAnnotation.resolveParameterAnnotation(method, paramIndex);
                 if (nullnessAnnotation == NullnessAnnotation.CHECK_FOR_NULL) {
-                    value = IsNullValue.nullOnSimplePathValue();
+                    value = IsNullValue.NSP;
                 } else if (nullnessAnnotation == NullnessAnnotation.NONNULL) {
-                    value = IsNullValue.nonNullValue();
+                    value = IsNullValue.NONNULL;
                 } else {
-                    value = IsNullValue.nonReportingNotNullValue();
+                    value = IsNullValue.UNKNOWN;
                 }
 
                 entryFact.update(ir.getParam(paramIndex), value);
@@ -141,6 +136,9 @@ public class IsNullAnalysis extends AnalysisDriver<Stmt, IsNullFact> {
                     target.update(var, IsNullValue.merge(value, target.get(var))));
         }
 
+        private static final List<String> keywordsAssertionMethodsContain =
+                List.of("assert", "legal", "error", "abort", "failed");
+
         @Override
         public boolean transferNode(Stmt stmt, IsNullFact in, IsNullFact out) {
             if (!in.isValid()) {
@@ -148,233 +146,25 @@ public class IsNullAnalysis extends AnalysisDriver<Stmt, IsNullFact> {
                 out.setInvalid();
                 return changed;
             }
-            return stmt.accept(new StmtVisitor<>() {
-                @Override
-                public Boolean visit(New stmt) {
-                    return updateLValueIfReferenceType(stmt, IsNullValue.nonNullValue());
-                }
-
-                @Override
-                public Boolean visit(AssignLiteral stmt) {
-                    Var lValue = stmt.getLValue();
-                    if (lValue.getType() instanceof ReferenceType
-                            && stmt.getRValue() instanceof ReferenceLiteral) {
-                        IsNullFact oldOut = out.copy();
-                        out.copyFrom(in);
-                        if (stmt.getRValue() instanceof NullLiteral) {
-                            out.update(lValue, IsNullValue.nullValue());
-                        } else {
-                            out.update(lValue, IsNullValue.nonNullValue());
-                        }
-                        return !out.equals(oldOut);
-                    }
-                    return out.copyFrom(in);
-                }
-
-                @Override
-                public Boolean visit(Copy stmt) {
-                    Var lValue = stmt.getLValue();
-                    if (lValue.getType() instanceof ReferenceType) {
-                        IsNullFact oldOut = out.copy();
-                        out.copyFrom(in);
-
-                        IsNullValue rNullValue = in.get(stmt.getRValue());
-                        if (rNullValue != null) {
-                            out.update(lValue, rNullValue);
-                        }
-                        return !out.equals(oldOut);
-                    }
-                    return out.copyFrom(in);
-                }
-
-                @Override
-                public Boolean visit(LoadArray stmt) {
-                    return updateLValueIfReferenceType(stmt, IsNullValue.nullOnComplexPathValue());
-                }
-
-                @Override
-                public Boolean visit(LoadField stmt) {
-                    return updateLValueIfReferenceType(stmt, IsNullValue.nullOnComplexPathValue());
-                }
-
-                @Override
-                public Boolean visit(Invoke stmt) {
-                    JMethod invokeMethod = stmt.getInvokeExp().getMethodRef().resolveNullable();
-                    // todo: develop and use Unconditional dereference analysis
-                    if (invokeMethod == null) {
-                        return visitDefault(stmt);
-                    }
-
-                    IsNullFact oldOut = out.copy();
-                    out.copyFrom(in);
-                    if (isAssertionCall(invokeMethod)) {// downgrade null value after an assertion call
-                        out.entries()
-                                .filter(entry -> entry.getValue().isNullOnSomePath()
-                                        || entry.getValue().isDefinitelyNull())
-                                .forEach(entry -> entry.setValue(IsNullValue.nullOnComplexPathValue()));
-                        return !out.equals(oldOut);
-                    } else { // use parameter annotation info
-                        for (int paramIndex = 0; paramIndex < invokeMethod.getParamCount(); ++paramIndex) {
-                            NullnessAnnotation nullnessAnnotation =
-                                    NullnessAnnotation.resolveParameterAnnotation(invokeMethod, paramIndex);
-                            if (nullnessAnnotation == NullnessAnnotation.NONNULL) {
-                                // todo: if arg is definitely null, should take special care for this case?
-                                out.update(stmt.getInvokeExp().getArg(paramIndex), IsNullValue.nonNullValue());
-                            }
-                        }
-                    }
-
-                    if (stmt.getLValue() == null) {
-                        return !out.equals(oldOut);
-                    }
-
-                    NullnessAnnotation returnAnnotation = NullnessAnnotation.resolveReturnValueAnnotation(invokeMethod);
-                    IsNullValue value = IsNullValue.nonReportingNotNullValue();
-                    if (returnAnnotation == NullnessAnnotation.CHECK_FOR_NULL) {
-                        value = IsNullValue.nullOnSimplePathValue();
-                    } else if (returnAnnotation == NullnessAnnotation.NONNULL) {
-                        value = IsNullValue.nonNullValue();
-                    }
-
-                    return updateLValueIfReferenceType(stmt, value);
-                }
-
-                private Boolean updateLValueIfReferenceType(DefinitionStmt<Var, ?> stmt, IsNullValue newValue) {
-                    Var lValue = stmt.getLValue();
-                    if (lValue.getType() instanceof ReferenceType) {
-                        IsNullFact oldOut = out.copy();
-                        out.copyFrom(in);
-
-                        out.update(lValue, newValue);
-                        return !out.equals(oldOut);
-                    }
-                    return out.copyFrom(in);
-                }
-
-                @Override
-                public Boolean visit(If stmt) {
-                    // only update IsNullConditionDecision
-                    ConditionExp.Op op = stmt.getCondition().getOperator();
-                    if (op == ConditionExp.Op.EQ || op == ConditionExp.Op.NE) {
-                        int refCount = 0;
-                        Var var1 = stmt.getCondition().getOperand1();
-                        Var var2 = stmt.getCondition().getOperand2();
-                        Var reference = null;
-
-                        if (var1.getType() instanceof ClassType || var1.getType() instanceof ArrayType) {
-                            refCount++;
-                            reference = var1;
-                        }
-                        if (var2.getType() instanceof ClassType || var2.getType() instanceof ArrayType) {
-                            refCount++;
-                            reference = var2;
-                        }
-
-                        if (refCount == 1) { // A reference object compare with null
-                            IsNullValue referenceVal = in.get(reference);
-                            boolean ifnull = op == ConditionExp.Op.EQ;
-                            out.setDecision(handleIfNull(stmt, reference, referenceVal, ifnull));
-
-                        } else if (refCount == 2) { // A reference object compare with another one
-                            IsNullValue ifTrueDecision = null;
-                            IsNullValue ifFalseDecision = null;
-                            Var testedVar = var1;
-                            boolean ifEq = op == ConditionExp.Op.EQ;
-
-                            IsNullValue nullVal1 = in.get(var1);
-                            IsNullValue nullVal2 = in.get(var2);
-
-                            if (nullVal1.isDefinitelyNull() && nullVal2.isDefinitelyNull()) {
-                                if (ifEq) {
-                                    ifTrueDecision = IsNullValue.checkedNullValue();
-                                } else {
-                                    ifFalseDecision = IsNullValue.checkedNullValue();
-                                }
-                                out.setDecision(new IsNullConditionDecision(stmt, testedVar, ifTrueDecision, ifFalseDecision));
-                            } else if (nullVal1.isDefinitelyNull()) {
-                                out.setDecision(handleIfNull(stmt, var2, nullVal2, ifEq));
-                            } else if (nullVal2.isDefinitelyNull()) {
-                                out.setDecision(handleIfNull(stmt, var1, nullVal1, ifEq));
-
-                            } else if (nullVal1.isDefinitelyNotNull() && !nullVal2.isDefinitelyNotNull()) {
-                                // learn var2 is definitely non-null on one branch
-                                testedVar = var2;
-                                if (ifEq) {
-                                    ifTrueDecision = nullVal1; // var1 == var2 -> var1 and var2 have same IsNullValues
-                                    ifFalseDecision = nullVal2; // var1 != var2 -> var2 keeps its IsNullValues, will not change on this edge.
-                                } else {
-                                    ifTrueDecision = nullVal2;
-                                    ifFalseDecision = nullVal1;
-                                }
-                                out.setDecision(new IsNullConditionDecision(stmt, testedVar, ifTrueDecision, ifFalseDecision));
-                            } else if (!nullVal1.isDefinitelyNotNull() && nullVal2.isDefinitelyNotNull()) {
-                                // learn var1 is definitely non-null on one branch
-                                testedVar = var1;
-                                if (ifEq) {
-                                    ifTrueDecision = nullVal2;
-                                    ifFalseDecision = nullVal1;
-                                } else {
-                                    ifTrueDecision = nullVal1;
-                                    ifFalseDecision = nullVal2;
-                                }
-                                out.setDecision(new IsNullConditionDecision(stmt, testedVar, ifTrueDecision, ifFalseDecision));
-                            }
-                        }
-                    }
-                    return out.copyFrom(in);
-                }
-
-                private IsNullConditionDecision handleIfNull(If stmt, Var referenceVar, IsNullValue referenceVal, boolean ifnull) {
-                    IsNullValue ifTrueDecision = null;
-                    IsNullValue ifFalseDecision = null;
-
-                    if (referenceVal.isDefinitelyNull()) {
-                        if (ifnull) {
-                            ifTrueDecision = IsNullValue.checkedNullValue();
-                        } else {
-                            ifFalseDecision = IsNullValue.checkedNullValue();
-                        }
-                    } else if (referenceVal.isDefinitelyNotNull()) {
-                        if (ifnull) {
-                            ifFalseDecision = referenceVal.isAKaBoom() ? referenceVal : IsNullValue.checkedNonNullValue();
-                        } else {
-                            ifTrueDecision = referenceVal.isAKaBoom() ? referenceVal : IsNullValue.checkedNonNullValue();
-                        }
-                    } else { // both branches feasible
-                        if (ifnull) {
-                            ifTrueDecision = IsNullValue.checkedNullValue();
-                            ifFalseDecision = IsNullValue.checkedNonNullValue();
-                        } else {
-                            ifTrueDecision = IsNullValue.checkedNonNullValue();
-                            ifFalseDecision = IsNullValue.checkedNullValue();
-                        }
-                    }
-                    return new IsNullConditionDecision(stmt, referenceVar, ifTrueDecision, ifFalseDecision);
-                }
-
-                @Override
-                public Boolean visitDefault(Stmt stmt) {
-                    return out.copyFrom(in);
-                }
-            });
+            return stmt.accept(new IsNullVisitor(out, in));
         }
 
         @Override
-        public boolean needTransferEdge(Edge<Stmt> edge) {
+        public boolean needTransferEdge(CFGEdge<Stmt> edge) {
             return true;
         }
 
         @Override
-        public IsNullFact transferEdge(Edge<Stmt> edge, IsNullFact nodeFact) {
+        public IsNullFact transferEdge(CFGEdge<Stmt> edge, IsNullFact nodeFact) {
             if (!nodeFact.isValid()) {
                 return nodeFact;
             }
 
-            Stmt source = edge.getSource();
+            Stmt source = edge.source();
             IsNullFact resultFact = nodeFact;
 
             int nonExceptionSucessorNums = 0;
-            for (Edge<Stmt> e : cfg.getOutEdgesOf(source)) {
+            for (CFGEdge<Stmt> e : cfg.getOutEdgesOf(source)) {
                 nonExceptionSucessorNums += e.isExceptional() ? 0 : 1;
             }
             // 1. downgrade on non-exception control splits
@@ -382,24 +172,27 @@ public class IsNullAnalysis extends AnalysisDriver<Stmt, IsNullFact> {
                 resultFact.downgradeOnControlSplit();
             }
             // 2. downgrade NULL&NSP to do_not_report value for two special exceptions
-            // todo: should our null value add an exception property?
-            if (edge.getKind() == Edge.Kind.CAUGHT_EXCEPTION) {
+            // TODO: should our null value add an exception property?
+            if (edge.getKind() == CFGEdge.Kind.CAUGHT_EXCEPTION) {
                 resultFact = nodeFact.copy();
                 for (ClassType classType : edge.getExceptions()) {
                     if (classType.getName().equals(ClassNames.CLONE_NOT_SUPPORTED_EXCEPTION)
                             || classType.getName().equals(ClassNames.INTERRUPTED_EXCEPTION)) {
                         resultFact.entries()
-                                .filter(entry -> entry.getValue().isDefinitelyNull() || entry.getValue().isNullOnSomePath())
-                                .forEach(entry -> entry.setValue(IsNullValue.nullOnComplexPathValue()));
+                                .filter(entry -> entry.getValue().isDefinitelyNull()
+                                        || entry.getValue().isNullOnSomePath())
+                                .forEach(entry ->
+                                        entry.setValue(IsNullValue.NCP));
                     }
                 }
-            } else if (edge.getKind() == Edge.Kind.IF_TRUE || edge.getKind() == Edge.Kind.IF_FALSE) {
+            } else if (edge.getKind() == CFGEdge.Kind.IF_TRUE || edge.getKind() == CFGEdge.Kind.IF_FALSE) {
                 // 3. use null comparison information
-                // todo: handle instanceof operand?
+                // TODO: handle instanceof operand?
                 IsNullConditionDecision decision = nodeFact.getDecision();
                 if (decision != null) {
                     if (!decision.isEdgeFeasible(edge.getKind())) {
-                        // set this target basic block invalid, their facts should not affect analysis process
+                        // set this target basic block invalid,
+                        // their facts should not affect analysis process
                         resultFact = nodeFact.copy();
                         resultFact.setInvalid();
                     } else {
@@ -409,17 +202,17 @@ public class IsNullAnalysis extends AnalysisDriver<Stmt, IsNullFact> {
                             assert decisionValue != null;
 
                             resultFact = nodeFact.copy();
-                            // todo: use pta to update more variable
+                            // TODO: use pta to update more variable
                             resultFact.update(varTested, decisionValue);
-                            if (decisionValue.isDefinitelyNull()) {
-
-                            }
+//                            if (decisionValue.isDefinitelyNull()) {
+//
+//                            }
                         }
                     }
                 }
-            } else if (edge.getKind() == Edge.Kind.FALL_THROUGH) {
+            } else if (edge.getKind() == CFGEdge.Kind.FALL_THROUGH) {
                 // 4. handle those statements which may raise NullPointerException
-                Stmt target = edge.getTarget();
+                Stmt target = edge.target();
                 Var derefVar = target.accept(new NPEVarVisitor());
 
                 if (derefVar != null) {
@@ -432,8 +225,8 @@ public class IsNullAnalysis extends AnalysisDriver<Stmt, IsNullFact> {
                     } else if (!derefVal.isDefinitelyNotNull()) {
                         // update the null value for the dereferenced value.
                         resultFact = nodeFact.copy();
-                        // todo: use pta to update more Var
-                        resultFact.update(derefVar, IsNullValue.noKaboomNonNullValue());
+                        // TODO: use pta to update more Var
+                        resultFact.update(derefVar, IsNullValue.NO_KABOOM_NN);
                     }
                 }
             }
@@ -455,32 +248,47 @@ public class IsNullAnalysis extends AnalysisDriver<Stmt, IsNullFact> {
                     || "logTerminal".equals(methodName) || methodName.startsWith("logAndThrow")
                     || "insist".equals(methodNameLC) || "usage".equals(methodNameLC)
                     || "exit".equals(methodNameLC) || methodNameLC.startsWith("fail")
-                    || methodNameLC.startsWith("fatal") || methodNameLC.contains("assert")
-                    || methodNameLC.contains("legal") || methodNameLC.contains("error")
-                    || methodNameLC.contains("abort")
-                    // || methodNameLC.indexOf("check") >= 0
-                    || methodNameLC.contains("failed"))
+                    || methodNameLC.startsWith("fatal") || keywordsAssertionMethodsContain
+                    .stream().anyMatch(methodNameLC::contains))
                     || "addOrThrowException".equals(methodName);
         }
 
 
         private enum NullnessAnnotation {
+
             CHECK_FOR_NULL,
             NONNULL,
             NULLABLE,
             NN_UNKNOWN;
 
+            private static final String EQUALS = "boolean equals(java.lang.Object)";
+            private static final String MAIN = "void main(java.lang.String[])";
+            private static final String CLONE = "java.lang.Object clone()";
+            private static final String TO_STRING = "java.lang.String toString()";
+            private static final String READ_RESOLVE = "java.lang.Object readResolve()";
+
+            private static final List<String> checkForNullClasses =
+                    List.of("android.support.annotation.Nullable",
+                            "androidx.annotation.Nullable",
+                            "com.google.common.base.Nullable",
+                            "org.eclipse.jdt.annotation.Nullable",
+                            "org.jetbrains.annotations.Nullable",
+                            "org.checkerframework.checker.nullness.qual.Nullable",
+                            "org.checkerframework.checker.nullness.compatqual.NullableDecl");
+
             public static NullnessAnnotation resolveParameterAnnotation(JMethod method, int index) {
-                // todo: make this resolve process as a independent analysis?
+                // TODO: make this resolve process as a independent analysis?
                 if (index == 0) {
-                    String subsignature = method.getSubsignature().toString();
-                    if (subsignature.equals("boolean equals(java.lang.Object)")) {
+                    String subSignature = method.getSubsignature().toString();
+                    if (subSignature.equals(EQUALS) && !method.isStatic()) {
                         return NullnessAnnotation.CHECK_FOR_NULL;
-                    } else if (subsignature.equals("void main(java.lang.String[])")
-                            && method.isStatic()) {
+                    } else if (subSignature.equals(MAIN)
+                            && method.isStatic()
+                            && method.isPublic()) {
                         return NullnessAnnotation.NONNULL;
                     } else if (method.getName().equals("compareTo")
-                            && method.getReturnType().getName().equals("boolean")) {
+                            && method.getReturnType().getName().equals("boolean")
+                            && !method.isStatic()) {
                         return NullnessAnnotation.NONNULL;
                     }
                 }
@@ -501,18 +309,20 @@ public class IsNullAnalysis extends AnalysisDriver<Stmt, IsNullFact> {
                         return nullnessAnnotation;
                     }
                 }
+
+                String subSignature = method.getSubsignature().toString();
+                if (!method.isStatic() &&
+                        (subSignature.equals(CLONE)
+                                || subSignature.equals(TO_STRING)
+                                || (subSignature.equals(READ_RESOLVE) && method.isPrivate()))) {
+                    return NONNULL;
+                }
                 return NN_UNKNOWN;
             }
 
             private static NullnessAnnotation parse(Annotation a) {
                 String className = a.getType();
-                if ("android.support.annotation.Nullable".equals(className)
-                        || "androidx.annotation.Nullable".equals(className)
-                        || "com.google.common.base.Nullable".equals(className)
-                        || "org.eclipse.jdt.annotation.Nullable".equals(className)
-                        || "org.jetbrains.annotations.Nullable".equals(className)
-                        || "org.checkerframework.checker.nullness.qual.Nullable".equals(className)
-                        || "org.checkerframework.checker.nullness.compatqual.NullableDecl".equals(className)
+                if (checkForNullClasses.stream().anyMatch(className::equals)
                         || className.endsWith("PossiblyNull")
                         || className.endsWith("CheckForNull")) {
                     return CHECK_FOR_NULL;
@@ -528,56 +338,214 @@ public class IsNullAnalysis extends AnalysisDriver<Stmt, IsNullFact> {
             }
         }
 
-    }
+        private class IsNullVisitor implements StmtVisitor<Boolean> {
+            private final IsNullFact out;
+            private final IsNullFact in;
 
-    public static class NPEVarVisitor implements StmtVisitor<Var> {
-        @Override
-        public Var visitDefault(Stmt stmt) {
-            return null;
-        }
+            public IsNullVisitor(IsNullFact out, IsNullFact in) {
+                this.out = out;
+                this.in = in;
+            }
 
-        @Override
-        public Var visit(LoadField stmt) {
-            return stmt.isStatic() ?
-                    null : ((InstanceFieldAccess) stmt.getFieldAccess()).getBase();
-        }
+            @Override
+            public Boolean visit(New stmt) {
+                return updateLValueIfReferenceType(stmt, IsNullValue.NONNULL);
+            }
 
-        @Override
-        public Var visit(StoreField stmt) {
-            return stmt.isStatic() ?
-                    null : ((InstanceFieldAccess) stmt.getFieldAccess()).getBase();
-        }
+            @Override
+            public Boolean visit(AssignLiteral stmt) {
+                if (stmt.getRValue() instanceof NullLiteral) {
+                    return updateLValueIfReferenceType(stmt, IsNullValue.NULL);
+                } else if (stmt.getRValue() instanceof ReferenceLiteral) {
+                    return updateLValueIfReferenceType(stmt, IsNullValue.NONNULL);
+                }
+                return out.copyFrom(in);
+            }
 
-        @Override
-        public Var visit(Unary stmt) {
-            return stmt.getRValue() instanceof ArrayLengthExp ?
-                    ((ArrayLengthExp) stmt.getRValue()).getBase() : null;
-        }
+            @Override
+            public Boolean visit(Copy stmt) {
+                return updateLValueIfReferenceType(stmt, in.get(stmt.getRValue()));
+            }
 
-        @Override
-        public Var visit(Invoke stmt) {
-            return stmt.isStatic() ?
-                    null : ((InvokeInstanceExp) stmt.getInvokeExp()).getBase();
-        }
+            @Override
+            public Boolean visit(Cast stmt) {
+                return updateLValueIfReferenceType(stmt, in.get(stmt.getRValue().getValue()));
+            }
 
-        @Override
-        public Var visit(Throw stmt) {
-            return stmt.getExceptionRef();
-        }
+            @Override
+            public Boolean visit(LoadArray stmt) {
+                return updateLValueIfReferenceType(stmt, IsNullValue.NCP);
+            }
 
-        @Override
-        public Var visit(Monitor stmt) {
-            return StmtVisitor.super.visit(stmt);
-        }
+            @Override
+            public Boolean visit(LoadField stmt) {
+                return updateLValueIfReferenceType(stmt, IsNullValue.NCP);
+            }
 
-        @Override
-        public Var visit(LoadArray stmt) {
-            return stmt.getArrayAccess().getBase();
-        }
+            @Override
+            public Boolean visit(Invoke stmt) {
+                if (stmt.isDynamic()) {
+                    return false;
+                }
+                JMethod invokeMethod = stmt.getInvokeExp().getMethodRef().resolveNullable();
+                // TODO: develop and use Unconditional dereference analysis
+                if (invokeMethod == null) {
+                    return visitDefault(stmt);
+                }
 
-        @Override
-        public Var visit(StoreArray stmt) {
-            return stmt.getArrayAccess().getBase();
+                IsNullFact oldOut = out.copy();
+                out.copyFrom(in);
+                if (isAssertionCall(invokeMethod)) { // downgrade null value after an assertion call
+                    out.entries()
+                            .filter(entry -> entry.getValue().isNullOnSomePath()
+                                    || entry.getValue().isDefinitelyNull())
+                            .forEach(entry -> entry.setValue(IsNullValue.NCP));
+                    return !out.equals(oldOut);
+                } else { // use parameter annotation info
+                    for (int paramIndex = 0; paramIndex < invokeMethod.getParamCount(); ++paramIndex) {
+                        NullnessAnnotation nullnessAnnotation =
+                                NullnessAnnotation.resolveParameterAnnotation(invokeMethod, paramIndex);
+                        if (nullnessAnnotation == NullnessAnnotation.NONNULL) {
+                            // TODO: if arg is definitely null, should take special care for this case?
+                            out.update(stmt.getInvokeExp().getArg(paramIndex), IsNullValue.NONNULL);
+                        }
+                    }
+                }
+
+                if (stmt.getLValue() == null) {
+                    return !out.equals(oldOut);
+                }
+
+                NullnessAnnotation returnAnnotation = NullnessAnnotation.resolveReturnValueAnnotation(invokeMethod);
+                IsNullValue value = IsNullValue.UNKNOWN;
+                if (returnAnnotation == NullnessAnnotation.CHECK_FOR_NULL) {
+                    value = IsNullValue.NSP;
+                } else if (returnAnnotation == NullnessAnnotation.NONNULL) {
+                    value = IsNullValue.NONNULL;
+                }
+
+                return updateLValueIfReferenceType(stmt, value);
+            }
+
+            private Boolean updateLValueIfReferenceType(DefinitionStmt<Var, ?> stmt, IsNullValue newValue) {
+                Var lValue = stmt.getLValue();
+                assert lValue != null;
+                if (lValue.getType() instanceof ReferenceType) {
+                    boolean changed = false;
+                    for (Var inVar : in.keySet()) {
+                        if (!inVar.equals(lValue)) {
+                            changed |= out.update(inVar, in.get(inVar));
+                        }
+                    }
+                    return out.update(lValue, newValue) || changed;
+                }
+                return out.copyFrom(in);
+            }
+
+            @Override
+            public Boolean visit(If stmt) {
+                // only update IsNullConditionDecision
+                ConditionExp.Op op = stmt.getCondition().getOperator();
+                if (op == ConditionExp.Op.EQ || op == ConditionExp.Op.NE) {
+                    int refCount = 0;
+                    Var var1 = stmt.getCondition().getOperand1();
+                    Var var2 = stmt.getCondition().getOperand2();
+                    Var reference = null;
+
+                    if (var1.getType() instanceof ClassType || var1.getType() instanceof ArrayType) {
+                        refCount++;
+                        reference = var1;
+                    }
+                    if (var2.getType() instanceof ClassType || var2.getType() instanceof ArrayType) {
+                        refCount++;
+                        reference = var2;
+                    }
+
+                    if (refCount == 1) { // A reference object compare with null
+                        IsNullValue referenceVal = in.get(reference);
+                        boolean ifnull = op == ConditionExp.Op.EQ;
+                        out.setDecision(handleIfNull(stmt, reference, referenceVal, ifnull));
+
+                    } else if (refCount == 2) { // A reference object compare with another one
+                        IsNullValue ifTrueDecision = null;
+                        IsNullValue ifFalseDecision = null;
+                        Var testedVar = var1;
+                        boolean ifEq = op == ConditionExp.Op.EQ;
+
+                        IsNullValue nullVal1 = in.get(var1);
+                        IsNullValue nullVal2 = in.get(var2);
+
+                        if (nullVal1.isDefinitelyNull() && nullVal2.isDefinitelyNull()) {
+                            if (ifEq) {
+                                ifTrueDecision = IsNullValue.CHECKED_NULL;
+                            } else {
+                                ifFalseDecision = IsNullValue.CHECKED_NULL;
+                            }
+                            out.setDecision(new IsNullConditionDecision(stmt, testedVar, ifTrueDecision, ifFalseDecision));
+                        } else if (nullVal1.isDefinitelyNull()) {
+                            out.setDecision(handleIfNull(stmt, var2, nullVal2, ifEq));
+                        } else if (nullVal2.isDefinitelyNull()) {
+                            out.setDecision(handleIfNull(stmt, var1, nullVal1, ifEq));
+
+                        } else if (nullVal1.isDefinitelyNotNull() && !nullVal2.isDefinitelyNotNull()) {
+                            // learn var2 is definitely non-null on one branch
+                            testedVar = var2;
+                            if (ifEq) {
+                                ifTrueDecision = nullVal1; // var1 == var2 -> var1 and var2 have same IsNullValues
+                                ifFalseDecision = nullVal2; // var1 != var2 -> var2 keeps its IsNullValues, will not change on this edge.
+                            } else {
+                                ifTrueDecision = nullVal2;
+                                ifFalseDecision = nullVal1;
+                            }
+                            out.setDecision(new IsNullConditionDecision(stmt, testedVar, ifTrueDecision, ifFalseDecision));
+                        } else if (!nullVal1.isDefinitelyNotNull() && nullVal2.isDefinitelyNotNull()) {
+                            // learn var1 is definitely non-null on one branch
+                            if (ifEq) {
+                                ifTrueDecision = nullVal2;
+                                ifFalseDecision = nullVal1;
+                            } else {
+                                ifTrueDecision = nullVal1;
+                                ifFalseDecision = nullVal2;
+                            }
+                            out.setDecision(new IsNullConditionDecision(stmt, testedVar, ifTrueDecision, ifFalseDecision));
+                        }
+                    }
+                }
+                return out.copyFrom(in);
+            }
+
+            private IsNullConditionDecision handleIfNull(If stmt, Var referenceVar, IsNullValue referenceVal, boolean ifnull) {
+                IsNullValue ifTrueDecision = null;
+                IsNullValue ifFalseDecision = null;
+
+                if (referenceVal.isDefinitelyNull()) {
+                    if (ifnull) {
+                        ifTrueDecision = IsNullValue.CHECKED_NULL;
+                    } else {
+                        ifFalseDecision = IsNullValue.CHECKED_NULL;
+                    }
+                } else if (referenceVal.isDefinitelyNotNull()) {
+                    if (ifnull) {
+                        ifFalseDecision = referenceVal.isAKaBoom() ? referenceVal : IsNullValue.CHECKED_NN;
+                    } else {
+                        ifTrueDecision = referenceVal.isAKaBoom() ? referenceVal : IsNullValue.CHECKED_NN;
+                    }
+                } else { // both branches feasible
+                    if (ifnull) {
+                        ifTrueDecision = IsNullValue.CHECKED_NULL;
+                        ifFalseDecision = IsNullValue.CHECKED_NN;
+                    } else {
+                        ifTrueDecision = IsNullValue.CHECKED_NN;
+                        ifFalseDecision = IsNullValue.CHECKED_NULL;
+                    }
+                }
+                return new IsNullConditionDecision(stmt, referenceVar, ifTrueDecision, ifFalseDecision);
+            }
+
+            @Override
+            public Boolean visitDefault(Stmt stmt) {
+                return out.copyFrom(in);
+            }
         }
     }
 }

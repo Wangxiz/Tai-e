@@ -29,25 +29,25 @@ import pascal.taie.ir.exp.StringLiteral;
 import pascal.taie.ir.exp.Var;
 import pascal.taie.language.classes.JMethod;
 import pascal.taie.language.type.Type;
+import pascal.taie.util.collection.Maps;
 import soot.Local;
 import soot.Value;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
 class VarManager {
 
-    private final static String THIS = "%this";
+    private static final String THIS = "%this";
 
-    private final static String STRING_CONSTANT = "%stringconst";
+    private static final String STRING_CONSTANT = "%stringconst";
 
-    private final static String CLASS_CONSTANT = "%classconst";
+    private static final String CLASS_CONSTANT = "%classconst";
 
-    private final static String NULL_CONSTANT = "%nullconst";
+    private static final String NULL_CONSTANT = "%nullconst";
 
     /**
      * The method which contains the variable managed by this VarManager.
@@ -56,7 +56,7 @@ class VarManager {
 
     private final Converter converter;
 
-    private final Map<Local, Var> varMap = new LinkedHashMap<>();
+    private final Map<Local, Var> varMap = Maps.newLinkedHashMap();
 
     private final List<Var> vars = new ArrayList<>();
 

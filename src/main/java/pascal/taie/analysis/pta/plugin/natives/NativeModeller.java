@@ -22,11 +22,15 @@
 
 package pascal.taie.analysis.pta.plugin.natives;
 
-import pascal.taie.analysis.pta.core.cs.element.CSVar;
+import pascal.taie.analysis.graph.callgraph.Edge;
+import pascal.taie.analysis.pta.core.cs.element.CSCallSite;
+import pascal.taie.analysis.pta.core.cs.element.CSMethod;
 import pascal.taie.analysis.pta.core.solver.Solver;
 import pascal.taie.analysis.pta.plugin.Plugin;
-import pascal.taie.analysis.pta.pts.PointsToSet;
+import pascal.taie.analysis.pta.plugin.util.IRModel;
 import pascal.taie.language.classes.JMethod;
+
+import java.util.List;
 
 /**
  * This class models some native calls by "inlining" their side effects
@@ -36,40 +40,37 @@ public class NativeModeller implements Plugin {
 
     private Solver solver;
 
-    private ArrayCopyModel arrayCopyModel;
+    private List<IRModel> models;
 
     private DoPriviledgedModel doPrivilegedModel;
 
     @Override
     public void setSolver(Solver solver) {
         this.solver = solver;
-        arrayCopyModel = new ArrayCopyModel(solver);
         doPrivilegedModel = new DoPriviledgedModel(solver);
+        models = List.of(doPrivilegedModel,
+                new ArrayModel(solver),
+                new UnsafeModel(solver));
     }
 
     @Override
     public void onStart() {
-        solver.addIgnoredMethod(arrayCopyModel.getArraycopy());
-        doPrivilegedModel.getDoPrivilegeds().forEach(solver::addIgnoredMethod);
+        models.forEach(model ->
+                model.getModeledAPIs().forEach(solver::addIgnoredMethod));
     }
 
     @Override
     public void onNewMethod(JMethod method) {
-        method.getIR()
-                .invokes(false)
-                .forEach(invoke -> {
-                    arrayCopyModel.handleNewInvoke(invoke);
-                    doPrivilegedModel.handleNewInvoke(invoke);
-                });
+        models.forEach(model -> model.handleNewMethod(method));
     }
 
     @Override
-    public void onNewPointsToSet(CSVar csVar, PointsToSet pts) {
-        if (arrayCopyModel.isRelevantVar(csVar.getVar())) {
-            arrayCopyModel.handleNewPointsToSet(csVar, pts);
-        }
-        if (doPrivilegedModel.isRelevantVar(csVar.getVar())) {
-            doPrivilegedModel.handleNewPointsToSet(csVar, pts);
-        }
+    public void onNewCSMethod(CSMethod csMethod) {
+        models.forEach(model -> model.handleNewCSMethod(csMethod));
+    }
+
+    @Override
+    public void onNewCallEdge(Edge<CSCallSite, CSMethod> edge) {
+        doPrivilegedModel.handleNewCallEdge(edge);
     }
 }

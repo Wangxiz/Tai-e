@@ -23,6 +23,7 @@
 package pascal.taie.util.collection;
 
 import javax.annotation.Nonnull;
+import java.io.Serializable;
 import java.lang.reflect.Array;
 import java.util.Arrays;
 import java.util.Collection;
@@ -47,7 +48,8 @@ import java.util.Set;
  *
  * @param <E> type of elements
  */
-public abstract class AbstractHybridSet<E> extends AbstractSetEx<E> {
+public abstract class AbstractHybridSet<E> extends AbstractSetEx<E>
+        implements Serializable {
 
     // invariant: at most one of singleton and set is non-null
 
@@ -154,25 +156,25 @@ public abstract class AbstractHybridSet<E> extends AbstractSetEx<E> {
     @Override
     public boolean addAll(@Nonnull Collection<? extends E> c) {
         if (!isLargeSet) {
-            int c_size = c.size();
-            if (c_size == 0) {
+            int cSize = c.size();
+            if (cSize == 0) {
                 return false;
             }
-            int max_new_size = c_size + size();
+            int maxNewSize = cSize + size();
             int threshold = getThreshold();
             if (set == null) {
-                if (max_new_size == 1) {
+                if (maxNewSize == 1) {
                     assert singleton == null;
                     E e = CollectionUtils.getOne(c);
                     singleton = Objects.requireNonNull(e, NULL_MESSAGE);
                     return true;
-                } else if (max_new_size <= threshold) {
+                } else if (maxNewSize <= threshold) {
                     upgradeToSmallSet();
                 } else {
-                    upgradeToLargeSet(max_new_size + threshold);
+                    upgradeToLargeSet(maxNewSize + threshold);
                 }
-            } else if (max_new_size > threshold) {
-                upgradeToLargeSet(max_new_size + threshold);
+            } else if (maxNewSize > threshold) {
+                upgradeToLargeSet(maxNewSize + threshold);
             }
         }
         if (!(c instanceof AbstractHybridSet)) {
@@ -327,13 +329,13 @@ public abstract class AbstractHybridSet<E> extends AbstractSetEx<E> {
     @SuppressWarnings("unchecked")
     public <T> T[] toArray(@Nonnull T[] a) {
         if (singleton != null) {
-            if (a.length < 1)
+            if (a.length < 1) {
                 a = (T[]) Array.newInstance(a.getClass().getComponentType(), 1);
+            }
             a[0] = (T) singleton; // TODO: throw ArrayStoreException if not T :> V
             return a;
         }
         if (set != null) {
-            //noinspection SuspiciousToArrayCall
             return set.toArray(a);
         }
         Arrays.fill(a, null);

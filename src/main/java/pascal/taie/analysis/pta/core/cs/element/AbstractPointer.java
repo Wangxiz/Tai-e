@@ -22,14 +22,17 @@
 
 package pascal.taie.analysis.pta.core.cs.element;
 
+import pascal.taie.analysis.graph.flowgraph.FlowKind;
 import pascal.taie.analysis.pta.core.solver.PointerFlowEdge;
 import pascal.taie.analysis.pta.pts.PointsToSet;
 import pascal.taie.util.collection.ArraySet;
 import pascal.taie.util.collection.HybridIndexableSet;
+import pascal.taie.util.collection.Sets;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 abstract class AbstractPointer implements Pointer {
@@ -41,6 +44,8 @@ abstract class AbstractPointer implements Pointer {
     private final Set<Pointer> successors = new HybridIndexableSet<>(true);
 
     private final ArrayList<PointerFlowEdge> outEdges = new ArrayList<>(4);
+
+    private Set<Predicate<CSObj>> filters = Set.of();
 
     protected AbstractPointer(int index) {
         this.index = index;
@@ -62,6 +67,19 @@ abstract class AbstractPointer implements Pointer {
     }
 
     @Override
+    public void addFilter(Predicate<CSObj> filter) {
+        if (filters.isEmpty()) {
+            filters = Sets.newHybridSet();
+        }
+        filters.add(filter);
+    }
+
+    @Override
+    public Set<Predicate<CSObj>> getFilters() {
+        return filters;
+    }
+
+    @Override
     public Set<CSObj> getObjects() {
         PointsToSet pts = getPointsToSet();
         return pts == null ? Set.of() : pts.getObjects();
@@ -73,11 +91,19 @@ abstract class AbstractPointer implements Pointer {
     }
 
     @Override
-    public boolean addOutEdge(PointerFlowEdge edge) {
-        if (successors.add(edge.getTarget())) {
-            return outEdges.add(edge);
+    public PointerFlowEdge getOrAddEdge(FlowKind kind, Pointer source, Pointer target) {
+        if (successors.add(target)) {
+            PointerFlowEdge edge = new PointerFlowEdge(kind, source, target);
+            outEdges.add(edge);
+            return edge;
+        } else if (kind == FlowKind.OTHER) {
+            for (PointerFlowEdge edge : outEdges) {
+                if (edge.target().equals(target)) {
+                    return edge;
+                }
+            }
         }
-        return false;
+        return null;
     }
 
     @Override

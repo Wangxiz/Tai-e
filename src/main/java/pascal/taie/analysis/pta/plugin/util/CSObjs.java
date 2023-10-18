@@ -24,10 +24,13 @@ package pascal.taie.analysis.pta.plugin.util;
 
 import pascal.taie.World;
 import pascal.taie.analysis.pta.core.cs.element.CSObj;
+import pascal.taie.analysis.pta.core.heap.Descriptor;
+import pascal.taie.analysis.pta.core.heap.MockObj;
 import pascal.taie.ir.exp.ClassLiteral;
 import pascal.taie.ir.exp.MethodHandle;
 import pascal.taie.ir.exp.MethodType;
 import pascal.taie.ir.exp.StringLiteral;
+import pascal.taie.language.annotation.Annotation;
 import pascal.taie.language.classes.ClassNames;
 import pascal.taie.language.classes.JClass;
 import pascal.taie.language.classes.JField;
@@ -47,14 +50,22 @@ public final class CSObjs {
     }
 
     /**
+     * @return {@code true} if {@code csObj} is {@link MockObj} and it has
+     * descriptor {@code desc}.
+     */
+    public static boolean hasDescriptor(CSObj csObj, Descriptor desc) {
+        return csObj.getObject() instanceof MockObj mockObj &&
+                mockObj.getDescriptor().equals(desc);
+    }
+
+    /**
      * Converts a CSObj of string constant to corresponding String.
      * If the object is not a string constant, then return null.
      */
     @Nullable
     public static String toString(CSObj csObj) {
         Object alloc = csObj.getObject().getAllocation();
-        return alloc instanceof StringLiteral ?
-                ((StringLiteral) alloc).getString() : null;
+        return alloc instanceof StringLiteral str ? str.getString() : null;
     }
 
     /**
@@ -64,10 +75,10 @@ public final class CSObjs {
     @Nullable
     public static JClass toClass(CSObj csObj) {
         Object alloc = csObj.getObject().getAllocation();
-        if (alloc instanceof ClassLiteral klass) {
-            Type type = klass.getTypeValue();
-            if (type instanceof ClassType) {
-                return ((ClassType) type).getJClass();
+        if (alloc instanceof ClassLiteral cls) {
+            Type type = cls.getTypeValue();
+            if (type instanceof ClassType clsType) {
+                return clsType.getJClass();
             } else if (type instanceof ArrayType) {
                 return World.get().getClassHierarchy()
                         .getJREClass(ClassNames.OBJECT);
@@ -83,12 +94,7 @@ public final class CSObjs {
     @Nullable
     public static JMethod toConstructor(CSObj csObj) {
         Object alloc = csObj.getObject().getAllocation();
-        if (alloc instanceof JMethod method) {
-            if (method.isConstructor()) {
-                return method;
-            }
-        }
-        return null;
+        return (alloc instanceof JMethod m && m.isConstructor()) ? m : null;
     }
 
     /**
@@ -98,12 +104,7 @@ public final class CSObjs {
     @Nullable
     public static JMethod toMethod(CSObj csObj) {
         Object alloc = csObj.getObject().getAllocation();
-        if (alloc instanceof JMethod method) {
-            if (!method.isConstructor()) {
-                return method;
-            }
-        }
-        return null;
+        return (alloc instanceof JMethod m && !m.isConstructor()) ? m : null;
     }
 
     /**
@@ -113,7 +114,7 @@ public final class CSObjs {
     @Nullable
     public static JField toField(CSObj csObj) {
         Object alloc = csObj.getObject().getAllocation();
-        return alloc instanceof JField ? (JField) alloc : null;
+        return alloc instanceof JField field ? field : null;
     }
 
     /**
@@ -123,8 +124,7 @@ public final class CSObjs {
     @Nullable
     public static Type toType(CSObj csObj) {
         Object alloc = csObj.getObject().getAllocation();
-        return alloc instanceof ClassLiteral ?
-                ((ClassLiteral) alloc).getTypeValue() : null;
+        return alloc instanceof ClassLiteral cls ? cls.getTypeValue() : null;
     }
 
     /**
@@ -134,7 +134,7 @@ public final class CSObjs {
     @Nullable
     public static MethodType toMethodType(CSObj csObj) {
         Object alloc = csObj.getObject().getAllocation();
-        return alloc instanceof MethodType ? (MethodType) alloc : null;
+        return alloc instanceof MethodType mt ? mt : null;
     }
 
     /**
@@ -144,7 +144,16 @@ public final class CSObjs {
     @Nullable
     public static MethodHandle toMethodHandle(CSObj csObj) {
         Object alloc = csObj.getObject().getAllocation();
-        return alloc instanceof MethodHandle ? (MethodHandle) alloc : null;
+        return alloc instanceof MethodHandle mh ? mh : null;
+    }
+
+    /**
+     * Converts a CSObj of an Annotation to the Annotation.
+     * If the object is not an Annotation object, then return null.
+     */
+    public static Annotation toAnnotation(CSObj csObj) {
+        Object alloc = csObj.getObject().getAllocation();
+        return alloc instanceof Annotation a ? a : null;
     }
 
     /**

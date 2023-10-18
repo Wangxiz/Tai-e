@@ -22,16 +22,15 @@
 
 package pascal.taie.analysis.graph.cfg;
 
-import pascal.taie.config.Configs;
 import pascal.taie.ir.stmt.Stmt;
 import pascal.taie.language.classes.JMethod;
 import pascal.taie.language.type.Type;
 import pascal.taie.util.Indexer;
 import pascal.taie.util.SimpleIndexer;
+import pascal.taie.util.graph.DotAttributes;
 import pascal.taie.util.graph.DotDumper;
 
 import java.io.File;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 public class CFGDumper {
@@ -45,15 +44,15 @@ public class CFGDumper {
     /**
      * Dumps the given CFG to .dot file.
      */
-    static <N> void dumpDotFile(CFG<N> cfg) {
+    static <N> void dumpDotFile(CFG<N> cfg, File dumpDir) {
         Indexer<N> indexer = new SimpleIndexer<>();
         new DotDumper<N>()
                 .setNodeToString(n -> Integer.toString(indexer.getIndex(n)))
                 .setNodeLabeler(n -> toLabel(n, cfg))
-                .setGlobalNodeAttributes(Map.of("shape", "box",
+                .setGlobalNodeAttributes(DotAttributes.of("shape", "box",
                         "style", "filled", "color", "\".3 .2 1.0\""))
                 .setEdgeLabeler(e -> {
-                    Edge<N> edge = (Edge<N>) e;
+                    CFGEdge<N> edge = (CFGEdge<N>) e;
                     if (edge.isSwitchCase()) {
                         return edge.getKind() +
                                 "\n[case " + edge.getCaseValue() + "]";
@@ -67,14 +66,14 @@ public class CFGDumper {
                         return edge.getKind().toString();
                     }
                 })
-                .setEdgeAttrs(e -> {
-                    if (((Edge<N>) e).isExceptional()) {
-                        return Map.of("color", "red");
+                .setEdgeAttributer(e -> {
+                    if (((CFGEdge<N>) e).isExceptional()) {
+                        return DotAttributes.of("color", "red");
                     } else {
-                        return Map.of();
+                        return DotAttributes.of();
                     }
                 })
-                .dump(cfg, toDotPath(cfg));
+                .dump(cfg, new File(dumpDir, toDotFileName(cfg)));
     }
 
     public static <N> String toLabel(N node, CFG<N> cfg) {
@@ -89,7 +88,7 @@ public class CFGDumper {
         }
     }
 
-    private static String toDotPath(CFG<?> cfg) {
+    private static String toDotFileName(CFG<?> cfg) {
         JMethod m = cfg.getMethod();
         String fileName = String.valueOf(m.getDeclaringClass()) + '.' +
                 m.getName() + '(' +
@@ -103,6 +102,6 @@ public class CFGDumper {
         }
         // escape invalid characters in file name
         fileName = fileName.replaceAll("[\\[\\]<>]", "_") + ".dot";
-        return new File(Configs.getOutputDir(), fileName).toString();
+        return fileName;
     }
 }

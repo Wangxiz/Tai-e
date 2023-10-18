@@ -22,28 +22,32 @@
 
 package pascal.taie.config;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import pascal.taie.util.collection.Maps;
 
-import java.util.HashMap;
 import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class AnalysisOptionsTest {
 
     @Test
-    public void testNullOption() {
+    void testNullOption() {
         AnalysisOptions options = new AnalysisOptions(getOptionValues());
-        Assert.assertNull(options.get("z"));
+        assertNull(options.get("z"));
     }
 
-    @Test(expected = ConfigException.class)
-    public void testNonExistOption() {
-        AnalysisOptions options = new AnalysisOptions(getOptionValues());
-        options.get("non-exist-key");
+    @Test
+    void testNonExistOption() {
+        assertThrows(ConfigException.class, () -> {
+            AnalysisOptions options = new AnalysisOptions(getOptionValues());
+            options.get("non-exist-key");
+        });
     }
 
     private Map<String, Object> getOptionValues() {
-        Map<String, Object> values = new HashMap<>();
+        Map<String, Object> values = Maps.newMap();
         values.put("x", 100);
         values.put("y", "666");
         values.put("z", null);

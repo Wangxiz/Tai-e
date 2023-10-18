@@ -30,7 +30,8 @@ import pascal.taie.language.type.ClassType;
 import java.util.Collections;
 import java.util.Map;
 
-public class IsNullFact extends MapFact<Var, IsNullValue> {
+class IsNullFact extends MapFact<Var, IsNullValue> {
+
     public IsNullFact() {
         this(Collections.emptyMap());
     }
@@ -45,12 +46,13 @@ public class IsNullFact extends MapFact<Var, IsNullValue> {
 
     @Override
     public IsNullValue get(Var var) {
-        return map.getOrDefault(var, IsNullValue.undefValue());
+        return map.getOrDefault(var, IsNullValue.UNDEF);
     }
 
     @Override
     public boolean update(Var key, IsNullValue value) {
-        if (key.getType() instanceof ClassType || key.getType() instanceof ArrayType) {
+        if (key.getType() instanceof ClassType
+                || key.getType() instanceof ArrayType) {
             return super.update(key, value);
         }
         throw new UnsupportedOperationException();
@@ -73,12 +75,7 @@ public class IsNullFact extends MapFact<Var, IsNullValue> {
         map.entrySet()
                 .stream()
                 .filter(entry -> entry.getValue().isNullOnSomePath())
-                .forEach(entry -> entry.setValue(IsNullValue.nullOnComplexPathValue()));
-//            forEach((var, value) -> {
-//            if (value.isNullOnSomePath()) {
-//                update(var, IsNullValue.nullOnComplexPathValue());
-//            }
-//        });
+                .forEach(entry -> entry.setValue(IsNullValue.NCP));
     }
 
     public void setInvalid() {
@@ -86,7 +83,9 @@ public class IsNullFact extends MapFact<Var, IsNullValue> {
         isValid = false;
     }
 
-    public void setValid() {isValid = true;}
+    public void setValid() {
+        isValid = true;
+    }
 
     public boolean isValid() {
         return isValid;

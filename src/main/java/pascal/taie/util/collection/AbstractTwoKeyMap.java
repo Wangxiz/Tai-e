@@ -24,6 +24,7 @@ package pascal.taie.util.collection;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.io.Serializable;
 import java.util.AbstractSet;
 import java.util.Collection;
 import java.util.Collections;
@@ -31,9 +32,10 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.StringJoiner;
 
 public abstract class AbstractTwoKeyMap<K1, K2, V> implements
-        TwoKeyMap<K1, K2, V> {
+        TwoKeyMap<K1, K2, V>, Serializable {
 
     protected static final String NULL_KEY = "TwoKeyMap does not permit null keys";
 
@@ -67,7 +69,10 @@ public abstract class AbstractTwoKeyMap<K1, K2, V> implements
         return map == null ? null : map.get(key2);
     }
 
-    private Set<TwoKeyMap.Entry<K1, K2, V>> entrySet;
+    /**
+     * The cache of {@link AbstractTwoKeyMap#entrySet()}.
+     */
+    private transient Set<TwoKeyMap.Entry<K1, K2, V>> entrySet;
 
     @Override
     public Set<TwoKeyMap.Entry<K1, K2, V>> entrySet() {
@@ -106,31 +111,39 @@ public abstract class AbstractTwoKeyMap<K1, K2, V> implements
 
     protected abstract Iterator<TwoKeyMap.Entry<K1, K2, V>> entryIterator();
 
-    private Set<KeyPair<K1, K2>> twoKeySet;
+    /**
+     * The cache of {@link AbstractTwoKeyMap#twoKeySet()}.
+     */
+    private transient Set<Pair<K1, K2>> twoKeySet;
 
     @Override
-    public Set<KeyPair<K1, K2>> keyPairSet() {
-        Set<KeyPair<K1, K2>> set = twoKeySet;
+    public Set<Pair<K1, K2>> twoKeySet() {
+        Set<Pair<K1, K2>> set = twoKeySet;
         if (set == null) {
             set = Views.toMappedSet(entrySet(),
-                    e -> new KeyPair<>(e.key1(), e.key2()),
+                    e -> new Pair<>(e.key1(), e.key2()),
                     o -> {
-                        if (o instanceof KeyPair<?, ?> pair) {
-                            return containsKey((K1) pair.key1(),
-                                    (K2) pair.key2());
+                        if (o instanceof Pair<?, ?> pair) {
+                            //noinspection unchecked
+                            return containsKey((K1) pair.first(), (K2) pair.second());
                         }
                         return false;
                     });
+            twoKeySet = set;
         }
         return set;
     }
 
-    private Collection<V> values;
+    /**
+     * The cache of {@link AbstractTwoKeyMap#values()}.
+     */
+    private transient Collection<V> values;
 
     @Override
     public Collection<V> values() {
         Collection<V> vals = values;
         if (vals == null) {
+            //noinspection unchecked
             vals = Views.toMappedCollection(entrySet(), Entry::value,
                     o -> containsValue((V) o));
             values = vals;
@@ -173,21 +186,13 @@ public abstract class AbstractTwoKeyMap<K1, K2, V> implements
 
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder();
-        sb.append('{');
-        if (!isEmpty()) {
-            sb.append('\n');
-        }
+        StringJoiner joiner = new StringJoiner(", ", "{", "}");
         for (var e : entrySet()) {
             K1 key1 = e.key1();
             K2 key2 = e.key2();
             V value = e.value();
-            sb.append("  ")
-                    .append(key1).append(',')
-                    .append(key2).append('=')
-                    .append(value).append('\n');
+            joiner.add(key1 + "," + key2 + "=" + value);
         }
-        sb.append('}');
-        return sb.toString();
+        return joiner.toString();
     }
 }

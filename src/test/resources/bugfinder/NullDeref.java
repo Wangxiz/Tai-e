@@ -1,4 +1,5 @@
 class NullDeref {
+
     int y;
     Object field;
 
@@ -35,6 +36,10 @@ class NullDeref {
         Object[] array = new Object[10];
         n2 = array[0];
         n2 = getAObject();
+
+        NullDeref nd = new NullDeref();
+        Object n3 = (Object) nd;
+        n3 = (Object) null;
     }
 
     void nullArray() {
@@ -46,10 +51,6 @@ class NullDeref {
     public boolean equals(Object o) {
         return false;
     }
-
-//    public static boolean equals(Object o){
-//        return true;
-//    }
 
     void throwNull() throws Throwable {
         Throwable a = null;

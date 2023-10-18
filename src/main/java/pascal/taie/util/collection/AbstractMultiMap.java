@@ -29,6 +29,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.StringJoiner;
 
 public abstract class AbstractMultiMap<K, V> implements MultiMap<K, V> {
 
@@ -46,7 +47,10 @@ public abstract class AbstractMultiMap<K, V> implements MultiMap<K, V> {
         return false;
     }
 
-    private Set<Map.Entry<K, V>> entrySet;
+    /**
+     * The cache of {@link AbstractMultiMap#entrySet()}.
+     */
+    private transient Set<Map.Entry<K, V>> entrySet;
 
     @Override
     public Set<Map.Entry<K, V>> entrySet() {
@@ -84,7 +88,10 @@ public abstract class AbstractMultiMap<K, V> implements MultiMap<K, V> {
 
     protected abstract Iterator<Map.Entry<K, V>> entryIterator();
 
-    private Collection<V> values;
+    /**
+     * The cache of {@link AbstractMultiMap#values()}.
+     */
+    private transient Collection<V> values;
 
     @Override
     public Collection<V> values() {
@@ -121,7 +128,7 @@ public abstract class AbstractMultiMap<K, V> implements MultiMap<K, V> {
                     return false;
                 }
             }
-        } catch (ClassCastException | NullPointerException unused) {
+        } catch (ClassCastException | NullPointerException ignored) {
             return false;
         }
         return true;
@@ -129,17 +136,10 @@ public abstract class AbstractMultiMap<K, V> implements MultiMap<K, V> {
 
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder();
-        sb.append('{');
-        if (!isEmpty()) {
-            sb.append('\n');
-        }
+        StringJoiner joiner = new StringJoiner(", ", "{", "}");
         for (K key : keySet()) {
-            sb.append("  ")
-                    .append(key).append('=')
-                    .append(get(key)).append('\n');
+            joiner.add(key + "=" + get(key));
         }
-        sb.append('}');
-        return sb.toString();
+        return joiner.toString();
     }
 }

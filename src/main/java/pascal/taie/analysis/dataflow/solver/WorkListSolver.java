@@ -25,11 +25,12 @@ package pascal.taie.analysis.dataflow.solver;
 import pascal.taie.analysis.dataflow.analysis.DataflowAnalysis;
 import pascal.taie.analysis.dataflow.fact.DataflowResult;
 import pascal.taie.analysis.graph.cfg.CFG;
-import pascal.taie.analysis.graph.cfg.Edge;
+import pascal.taie.analysis.graph.cfg.CFGEdge;
 import pascal.taie.util.collection.CollectionUtils;
+import pascal.taie.util.collection.Sets;
 
 import java.util.Comparator;
-import java.util.TreeSet;
+import java.util.NavigableSet;
 
 /**
  * Work-list solver with optimization.
@@ -55,7 +56,7 @@ class WorkListSolver<Node, Fact> extends AbstractSolver<Node, Fact> {
                 cfg.getInEdgesOf(node).forEach(edge -> {
                     if (!analysis.needTransferEdge(edge)) {
                         result.setInFact(node,
-                                getOrNewOutFact(result, analysis, edge.getSource()));
+                                getOrNewOutFact(result, analysis, edge.source()));
                     }
                 });
             } else {
@@ -81,7 +82,7 @@ class WorkListSolver<Node, Fact> extends AbstractSolver<Node, Fact> {
     protected void doSolveForward(DataflowAnalysis<Node, Fact> analysis,
                                   DataflowResult<Node, Fact> result) {
         CFG<Node> cfg = analysis.getCFG();
-        TreeSet<Node> workList = new TreeSet<>(
+        NavigableSet<Node> workList = Sets.newOrderedSet(
                 Comparator.comparingInt(cfg::getIndex));
         cfg.forEach(node -> {
             if (!cfg.isEntry(node)) {
@@ -96,17 +97,17 @@ class WorkListSolver<Node, Fact> extends AbstractSolver<Node, Fact> {
             if (inDegree > 1) {
                 in = result.getInFact(node);
                 cfg.getInEdgesOf(node).forEach(inEdge -> {
-                    Fact fact = result.getOutFact(inEdge.getSource());
+                    Fact fact = result.getOutFact(inEdge.source());
                     if (analysis.needTransferEdge(inEdge)) {
                         fact = analysis.transferEdge(inEdge, fact);
                     }
                     analysis.meetInto(fact, in);
                 });
             } else if (inDegree == 1) {
-                Edge<Node> inEdge = CollectionUtils.getOne(cfg.getInEdgesOf(node));
+                CFGEdge<Node> inEdge = CollectionUtils.getOne(cfg.getInEdgesOf(node));
                 if (analysis.needTransferEdge(inEdge)) {
                     in = analysis.transferEdge(inEdge,
-                            result.getOutFact(inEdge.getSource()));
+                            result.getOutFact(inEdge.source()));
                     result.setInFact(node, in);
                 } else {
                     in = result.getInFact(node);
@@ -142,7 +143,7 @@ class WorkListSolver<Node, Fact> extends AbstractSolver<Node, Fact> {
                 cfg.getOutEdgesOf(node).forEach(edge -> {
                     if (!analysis.needTransferEdge(edge)) {
                         result.setOutFact(node,
-                                getOrNewInFact(result, analysis, edge.getTarget()));
+                                getOrNewInFact(result, analysis, edge.target()));
                     }
                 });
             } else {
@@ -168,7 +169,7 @@ class WorkListSolver<Node, Fact> extends AbstractSolver<Node, Fact> {
     protected void doSolveBackward(DataflowAnalysis<Node, Fact> analysis,
                                    DataflowResult<Node, Fact> result) {
         CFG<Node> cfg = analysis.getCFG();
-        TreeSet<Node> workList = new TreeSet<>(
+        NavigableSet<Node> workList = Sets.newOrderedSet(
                 Comparator.comparingInt(n -> -cfg.getIndex(n)));
         cfg.forEach(node -> {
             if (!cfg.isExit(node)) {
@@ -183,17 +184,17 @@ class WorkListSolver<Node, Fact> extends AbstractSolver<Node, Fact> {
             if (outDegree > 1) {
                 out = result.getOutFact(node);
                 cfg.getOutEdgesOf(node).forEach(outEdge -> {
-                    Fact fact = result.getInFact(outEdge.getTarget());
+                    Fact fact = result.getInFact(outEdge.target());
                     if (analysis.needTransferEdge(outEdge)) {
                         fact = analysis.transferEdge(outEdge, fact);
                     }
                     analysis.meetInto(fact, out);
                 });
             } else if (outDegree == 1) {
-                Edge<Node> outEdge = CollectionUtils.getOne(cfg.getOutEdgesOf(node));
+                CFGEdge<Node> outEdge = CollectionUtils.getOne(cfg.getOutEdgesOf(node));
                 if (analysis.needTransferEdge(outEdge)) {
                     out = analysis.transferEdge(outEdge,
-                            result.getInFact(outEdge.getTarget()));
+                            result.getInFact(outEdge.target()));
                     result.setOutFact(node, out);
                 } else {
                     out = result.getOutFact(node);

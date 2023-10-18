@@ -27,7 +27,6 @@ import pascal.taie.analysis.graph.cfg.CFG;
 import pascal.taie.analysis.graph.cfg.CFGNodeIndexer;
 import pascal.taie.config.AnalysisConfig;
 import pascal.taie.ir.IR;
-import pascal.taie.ir.LocalVarIndexer;
 import pascal.taie.ir.exp.Var;
 import pascal.taie.ir.stmt.Stmt;
 import pascal.taie.util.Indexer;
@@ -38,7 +37,7 @@ import java.util.Map;
 
 public class ReachingDefinition extends AnalysisDriver<Stmt, SetFact<Stmt>> {
 
-    public static final String ID = "reachdef";
+    public static final String ID = "reach-def";
 
     public ReachingDefinition(AnalysisConfig config) {
         super(config);
@@ -75,12 +74,11 @@ public class ReachingDefinition extends AnalysisDriver<Stmt, SetFact<Stmt>> {
          */
         private Map<Var, SetFact<Stmt>> computeDefs(IR ir) {
             Map<Var, SetFact<Stmt>> defs = new IndexMap<>(
-                    new LocalVarIndexer(ir),
-                    ir.getVars().size());
+                    ir.getVarIndexer(), ir.getVars().size());
             for (Stmt stmt : ir) {
                 stmt.getDef().ifPresent(def -> {
                     if (def instanceof Var defVar) {
-                        defs.computeIfAbsent(defVar, unused -> newInitialFact())
+                        defs.computeIfAbsent(defVar, __ -> newInitialFact())
                                 .add(stmt);
                     }
                 });

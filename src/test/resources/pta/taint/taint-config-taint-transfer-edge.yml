@@ -1,8 +1,0 @@
-sources:
-  - { method: "<TaintTransferEdge: A getSource()>", type: "C" }
-
-sinks:
-  - { method: "<B: void sink(A)>", index: 0 }
-
-transfers:
-  - { method: "<A: void transfer(A)>", from: 0, to: base, type: "C" }

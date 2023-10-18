@@ -27,6 +27,7 @@ import org.apache.logging.log4j.Logger;
 import pascal.taie.analysis.graph.callgraph.CallGraph;
 import pascal.taie.analysis.graph.callgraph.DefaultCallGraph;
 import pascal.taie.analysis.graph.callgraph.Edge;
+import pascal.taie.analysis.graph.flowgraph.ObjectFlowGraph;
 import pascal.taie.analysis.pta.core.cs.element.ArrayIndex;
 import pascal.taie.analysis.pta.core.cs.element.CSCallSite;
 import pascal.taie.analysis.pta.core.cs.element.CSManager;
@@ -37,8 +38,9 @@ import pascal.taie.analysis.pta.core.cs.element.InstanceField;
 import pascal.taie.analysis.pta.core.cs.element.Pointer;
 import pascal.taie.analysis.pta.core.cs.element.StaticField;
 import pascal.taie.analysis.pta.core.heap.Obj;
+import pascal.taie.analysis.pta.core.solver.PointerFlowGraph;
+import pascal.taie.analysis.pta.core.solver.PropagateTypes;
 import pascal.taie.ir.exp.ArrayAccess;
-import pascal.taie.ir.exp.Exp;
 import pascal.taie.ir.exp.InstanceFieldAccess;
 import pascal.taie.ir.exp.StaticFieldAccess;
 import pascal.taie.ir.exp.Var;
@@ -46,9 +48,6 @@ import pascal.taie.ir.stmt.Invoke;
 import pascal.taie.language.classes.JField;
 import pascal.taie.language.classes.JMethod;
 import pascal.taie.language.type.ArrayType;
-import pascal.taie.language.type.NullType;
-import pascal.taie.language.type.ReferenceType;
-import pascal.taie.language.type.Type;
 import pascal.taie.util.AbstractResultHolder;
 import pascal.taie.util.Canonicalizer;
 import pascal.taie.util.Indexer;
@@ -68,6 +67,8 @@ public class PointerAnalysisResultImpl extends AbstractResultHolder
         implements PointerAnalysisResult {
 
     private static final Logger logger = LogManager.getLogger(PointerAnalysisResultImpl.class);
+
+    private final PropagateTypes propTypes;
 
     private final CSManager csManager;
 
@@ -116,22 +117,23 @@ public class PointerAnalysisResultImpl extends AbstractResultHolder
      */
     private CallGraph<Invoke, JMethod> callGraph;
 
-    public PointerAnalysisResultImpl(CSManager csManager,
-                                     Indexer<Obj> objIndexer,
-                                     CallGraph<CSCallSite, CSMethod> csCallGraph) {
+    private final PointerFlowGraph pfg;
+
+    /**
+     * Object flow graph (context projected out).
+     */
+    private ObjectFlowGraph ofg;
+
+    public PointerAnalysisResultImpl(
+            PropagateTypes propTypes, CSManager csManager,
+            Indexer<Obj> objIndexer, CallGraph<CSCallSite, CSMethod> csCallGraph,
+            PointerFlowGraph pfg) {
+        this.propTypes = propTypes;
         this.csManager = csManager;
         this.objIndexer = objIndexer;
         this.csCallGraph = csCallGraph;
+        this.pfg = pfg;
         this.objects = removeContexts(getCSObjects().stream());
-    }
-
-    @Override
-    public boolean isConcerned(Exp exp) {
-        return isConcerned(exp.getType());
-    }
-
-    private static boolean isConcerned(Type type) {
-        return type instanceof ReferenceType && !(type instanceof NullType);
     }
 
     @Override
@@ -176,7 +178,7 @@ public class PointerAnalysisResultImpl extends AbstractResultHolder
 
     @Override
     public Set<Obj> getPointsToSet(Var var) {
-        if (!isConcerned(var)) {
+        if (!propTypes.isAllowed(var)) {
             return Set.of();
         }
         return varPointsTo.computeIfAbsent(var, v ->
@@ -187,7 +189,7 @@ public class PointerAnalysisResultImpl extends AbstractResultHolder
 
     @Override
     public Set<Obj> getPointsToSet(InstanceFieldAccess access) {
-        if (!isConcerned(access)) {
+        if (!propTypes.isAllowed(access)) {
             return Set.of();
         }
         Var base = access.getBase();
@@ -197,7 +199,7 @@ public class PointerAnalysisResultImpl extends AbstractResultHolder
 
     @Override
     public Set<Obj> getPointsToSet(Var base, JField field) {
-        if (!isConcerned(field.getType())) {
+        if (!propTypes.isAllowed(field.getType())) {
             return Set.of();
         }
         if (field.isStatic()) {
@@ -214,8 +216,24 @@ public class PointerAnalysisResultImpl extends AbstractResultHolder
     }
 
     @Override
+    public Set<Obj> getPointsToSet(Obj base, JField field) {
+        if (!propTypes.isAllowed(field.getType())) {
+            return Set.of();
+        }
+        if (field.isStatic()) {
+            logger.warn("{} is not an instance field", field);
+            return Set.of();
+        }
+        // TODO - properly handle non-exist base.field
+        return removeContexts(csManager.getCSObjsOf(base)
+                .stream()
+                .map(o -> csManager.getInstanceField(o, field))
+                .flatMap(InstanceField::objects));
+    }
+
+    @Override
     public Set<Obj> getPointsToSet(StaticFieldAccess access) {
-        if (!isConcerned(access)) {
+        if (!propTypes.isAllowed(access)) {
             return Set.of();
         }
         JField field = access.getFieldRef().resolveNullable();
@@ -224,7 +242,7 @@ public class PointerAnalysisResultImpl extends AbstractResultHolder
 
     @Override
     public Set<Obj> getPointsToSet(JField field) {
-        if (!isConcerned(field.getType())) {
+        if (!propTypes.isAllowed(field.getType())) {
             return Set.of();
         }
         if (!field.isStatic()) {
@@ -237,7 +255,7 @@ public class PointerAnalysisResultImpl extends AbstractResultHolder
 
     @Override
     public Set<Obj> getPointsToSet(ArrayAccess access) {
-        if (!isConcerned(access)) {
+        if (!propTypes.isAllowed(access)) {
             return Set.of();
         }
         return getPointsToSet(access.getBase(), access.getIndex());
@@ -246,7 +264,7 @@ public class PointerAnalysisResultImpl extends AbstractResultHolder
     @Override
     public Set<Obj> getPointsToSet(Var base, Var index) {
         if (base.getType() instanceof ArrayType baseType) {
-            if (!isConcerned(baseType.elementType())) {
+            if (!propTypes.isAllowed(baseType.elementType())) {
                 return Set.of();
             }
         } else {
@@ -259,6 +277,22 @@ public class PointerAnalysisResultImpl extends AbstractResultHolder
                         .flatMap(Pointer::objects)
                         .map(csManager::getArrayIndex)
                         .flatMap(ArrayIndex::objects)));
+    }
+
+    @Override
+    public Set<Obj> getPointsToSet(Obj array) {
+        if (array.getType() instanceof ArrayType baseType) {
+            if (!propTypes.isAllowed(baseType.elementType())) {
+                return Set.of();
+            }
+        } else {
+            logger.warn("{} is not an array", array);
+            return Set.of();
+        }
+        return removeContexts(csManager.getCSObjsOf(array)
+                .stream()
+                .map(csManager::getArrayIndex)
+                .flatMap(ArrayIndex::objects));
     }
 
     @Override
@@ -324,5 +358,12 @@ public class PointerAnalysisResultImpl extends AbstractResultHolder
                     callSite, callee));
         });
         return callGraph;
+    }
+
+    public ObjectFlowGraph getObjectFlowGraph() {
+        if (ofg == null) {
+            ofg = new ObjectFlowGraph(pfg, getCallGraph());
+        }
+        return ofg;
     }
 }

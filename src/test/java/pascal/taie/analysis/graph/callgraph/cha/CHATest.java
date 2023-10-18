@@ -22,32 +22,27 @@
 
 package pascal.taie.analysis.graph.callgraph.cha;
 
-import org.junit.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import pascal.taie.analysis.Tests;
 
 public class CHATest {
 
-    protected static void test(String main) {
-        Tests.test(main, "src/test/resources/cha/", "cg", "algorithm:cha");
+    private static final String CLASS_PATH = "src/test/resources/cha/";
+
+    static void test(String mainClass) {
+        Tests.testMain(mainClass, CLASS_PATH, "cg", "algorithm:cha");
     }
 
-    @Test
-    public void testStaticCall() {
-        test("StaticCall");
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "StaticCall",
+            "VirtualCall",
+            "Interface",
+            "AbstractMethod",
+    })
+    void testFull(String mainClass) {
+        test(mainClass);
     }
 
-    @Test
-    public void testVirtualCall() {
-        test("VirtualCall");
-    }
-
-    @Test
-    public void testInterface() {
-        test("Interface");
-    }
-
-    @Test
-    public void testAbstractMethod() {
-        test("AbstractMethod");
-    }
 }

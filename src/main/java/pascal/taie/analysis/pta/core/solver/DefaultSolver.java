@@ -28,6 +28,7 @@ import pascal.taie.World;
 import pascal.taie.analysis.graph.callgraph.CallGraphs;
 import pascal.taie.analysis.graph.callgraph.CallKind;
 import pascal.taie.analysis.graph.callgraph.Edge;
+import pascal.taie.analysis.graph.flowgraph.FlowKind;
 import pascal.taie.analysis.pta.PointerAnalysisResult;
 import pascal.taie.analysis.pta.PointerAnalysisResultImpl;
 import pascal.taie.analysis.pta.core.cs.CSCallGraph;
@@ -42,6 +43,7 @@ import pascal.taie.analysis.pta.core.cs.element.InstanceField;
 import pascal.taie.analysis.pta.core.cs.element.Pointer;
 import pascal.taie.analysis.pta.core.cs.element.StaticField;
 import pascal.taie.analysis.pta.core.cs.selector.ContextSelector;
+import pascal.taie.analysis.pta.core.heap.Descriptor;
 import pascal.taie.analysis.pta.core.heap.HeapModel;
 import pascal.taie.analysis.pta.core.heap.MockObj;
 import pascal.taie.analysis.pta.core.heap.Obj;
@@ -49,8 +51,8 @@ import pascal.taie.analysis.pta.plugin.Plugin;
 import pascal.taie.analysis.pta.pts.PointsToSet;
 import pascal.taie.analysis.pta.pts.PointsToSetFactory;
 import pascal.taie.config.AnalysisOptions;
+import pascal.taie.ir.IR;
 import pascal.taie.ir.exp.CastExp;
-import pascal.taie.ir.exp.Exp;
 import pascal.taie.ir.exp.InvokeExp;
 import pascal.taie.ir.exp.InvokeStatic;
 import pascal.taie.ir.exp.Literal;
@@ -75,8 +77,7 @@ import pascal.taie.language.classes.JClass;
 import pascal.taie.language.classes.JField;
 import pascal.taie.language.classes.JMethod;
 import pascal.taie.language.type.ArrayType;
-import pascal.taie.language.type.NullType;
-import pascal.taie.language.type.ReferenceType;
+import pascal.taie.language.type.ClassType;
 import pascal.taie.language.type.Type;
 import pascal.taie.language.type.TypeSystem;
 import pascal.taie.util.collection.Maps;
@@ -84,9 +85,11 @@ import pascal.taie.util.collection.Sets;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import static pascal.taie.language.classes.Signatures.FINALIZE;
 import static pascal.taie.language.classes.Signatures.FINALIZER_REGISTER;
@@ -96,9 +99,14 @@ public class DefaultSolver implements Solver {
     private static final Logger logger = LogManager.getLogger(DefaultSolver.class);
 
     /**
-     * Description for array objects created implicitly by multiarray instruction.
+     * Descriptor for array objects created implicitly by multiarray instruction.
      */
-    private static final String MULTI_ARRAY_DESC = "MultiArrayObj";
+    private static final Descriptor MULTI_ARRAY_DESC = () -> "MultiArrayObj";
+
+    /**
+     * Number that represents unlimited elapsed time.
+     */
+    private static final long UNLIMITED = -1;
 
     private final AnalysisOptions options;
 
@@ -114,10 +122,24 @@ public class DefaultSolver implements Solver {
 
     private final PointsToSetFactory ptsFactory;
 
+    private final PropagateTypes propTypes;
+
     /**
      * Whether only analyzes application code.
      */
     private final boolean onlyApp;
+
+    /**
+     * Time limit for pointer analysis (in seconds).
+     */
+    private final long timeLimit;
+
+    private TimeLimiter timeLimiter;
+
+    /**
+     * Whether the analysis has reached time limit.
+     */
+    private volatile boolean isTimeout;
 
     private Plugin plugin;
 
@@ -143,6 +165,7 @@ public class DefaultSolver implements Solver {
 
     private PointerAnalysisResult result;
 
+    @SuppressWarnings("unchecked")
     public DefaultSolver(AnalysisOptions options, HeapModel heapModel,
                          ContextSelector contextSelector, CSManager csManager) {
         this.options = options;
@@ -152,7 +175,9 @@ public class DefaultSolver implements Solver {
         hierarchy = World.get().getClassHierarchy();
         typeSystem = World.get().getTypeSystem();
         ptsFactory = new PointsToSetFactory(csManager.getObjectIndexer());
+        propTypes = new PropagateTypes((List<String>) options.get("propagate-types"));
         onlyApp = options.getBoolean("only-app");
+        timeLimit = options.getInt("time-limit");
     }
 
     @Override
@@ -226,32 +251,51 @@ public class DefaultSolver implements Solver {
      */
     private void initialize() {
         callGraph = new CSCallGraph(csManager);
-        pointerFlowGraph = new PointerFlowGraph();
+        pointerFlowGraph = new PointerFlowGraph(csManager);
         workList = new WorkList();
         reachableMethods = Sets.newSet();
         initializedClasses = Sets.newSet();
         ignoredMethods = Sets.newSet();
         stmtProcessor = new StmtProcessor();
-        plugin.onStart();
-
-        Context defContext = contextSelector.getEmptyContext();
-        // process program main method entry and set up its arguments
-        JMethod mainMethod = World.get().getMainMethod();
-        if (mainMethod != null) {
-            addEntryMethod(csManager.getCSMethod(defContext, mainMethod));
-            // initialize parameters of main method
-            Obj args = heapModel.getMainArgs();
-            Obj argsElem = heapModel.getMainArgsElem();
-            CSObj array = csManager.getCSObj(defContext, args);
-            ArrayIndex arrayIndex = csManager.getArrayIndex(array);
-            addPointsTo(arrayIndex, defContext, argsElem);
-            addVarPointsTo(defContext, mainMethod.getIR().getParam(0), defContext, args);
+        isTimeout = false;
+        if (timeLimit != UNLIMITED) {
+            timeLimiter = new TimeLimiter(timeLimit);
+            timeLimiter.countDown();
         }
-        // process program implicit entries
-        if (options.getBoolean("implicit-entries")) {
-            for (JMethod entry : World.get().getImplicitEntries()) {
-                addEntryMethod(csManager.getCSMethod(defContext, entry));
-            }
+        plugin.onStart();
+    }
+
+    private class TimeLimiter {
+
+        private static final long MILLIS_FACTOR = 1000;
+
+        private final Thread thread;
+
+        /**
+         * @param seconds the time limit.
+         */
+        private TimeLimiter(long seconds) {
+            thread = new Thread(() -> {
+                try {
+                    Thread.sleep(seconds * MILLIS_FACTOR);
+                } catch (InterruptedException ignored) {
+                }
+                isTimeout = true;
+            });
+        }
+
+        /**
+         * Starts count down.
+         */
+        private void countDown() {
+            thread.start();
+        }
+
+        /**
+         * Stops count down.
+         */
+        private void stop() {
+            thread.interrupt();
         }
     }
 
@@ -259,7 +303,7 @@ public class DefaultSolver implements Solver {
      * Processes work list entries until the work list is empty.
      */
     private void analyze() {
-        while (!workList.isEmpty()) {
+        while (!workList.isEmpty() && !isTimeout) {
             WorkList.Entry entry = workList.pollEntry();
             if (entry instanceof WorkList.PointerEntry pEntry) {
                 Pointer p = pEntry.pointer();
@@ -277,6 +321,12 @@ public class DefaultSolver implements Solver {
                 processCallEdge(eEntry.edge());
             }
         }
+        if (!workList.isEmpty() && isTimeout) {
+            logger.warn("Pointer analysis stops early as it reaches time limit ({} seconds)," +
+                    " and the result may be unsound!", timeLimit);
+        } else if (timeLimiter != null) { // finish normally but time limiter is still running
+            timeLimiter.stop();
+        }
         plugin.onFinish();
     }
 
@@ -286,10 +336,20 @@ public class DefaultSolver implements Solver {
      */
     private PointsToSet propagate(Pointer pointer, PointsToSet pointsToSet) {
         logger.trace("Propagate {} to {}", pointsToSet, pointer);
+        Set<Predicate<CSObj>> filters = pointer.getFilters();
+        if (!filters.isEmpty()) {
+            // apply filters (of the pointer) on pointsToSet
+            pointsToSet = pointsToSet.objects()
+                    .filter(o -> filters.stream().allMatch(f -> f.test(o)))
+                    .collect(ptsFactory::make, PointsToSet::addObject, PointsToSet::addAll);
+        }
         PointsToSet diff = getPointsToSetOf(pointer).addAllDiff(pointsToSet);
         if (!diff.isEmpty()) {
-            pointerFlowGraph.getOutEdgesOf(pointer).forEach(edge ->
-                    addPointsTo(edge.getTarget(), edge.getTransfer().apply(edge, diff)));
+            pointerFlowGraph.getOutEdgesOf(pointer).forEach(edge -> {
+                Pointer target = edge.target();
+                edge.getTransfers().forEach(transfer ->
+                        addPointsTo(target, transfer.apply(edge, diff)));
+            });
         }
         return diff;
     }
@@ -305,12 +365,14 @@ public class DefaultSolver implements Solver {
         Var var = baseVar.getVar();
         for (StoreField store : var.getStoreFields()) {
             Var fromVar = store.getRValue();
-            if (isConcerned(fromVar)) {
+            if (propTypes.isAllowed(fromVar)) {
                 CSVar from = csManager.getCSVar(context, fromVar);
+                JField field = store.getFieldRef().resolve();
                 pts.forEach(baseObj -> {
-                    InstanceField instField = csManager.getInstanceField(
-                            baseObj, store.getFieldRef().resolve());
-                    addPFGEdge(from, instField, PointerFlowEdge.Kind.INSTANCE_STORE);
+                    if (baseObj.getObject().isFunctional()) {
+                        InstanceField instField = csManager.getInstanceField(baseObj, field);
+                        addPFGEdge(from, instField, FlowKind.INSTANCE_STORE);
+                    }
                 });
             }
         }
@@ -327,13 +389,14 @@ public class DefaultSolver implements Solver {
         Var var = baseVar.getVar();
         for (LoadField load : var.getLoadFields()) {
             Var toVar = load.getLValue();
-            JField field = load.getFieldRef().resolve();
-            if (isConcerned(toVar)) {
+            if (propTypes.isAllowed(toVar)) {
                 CSVar to = csManager.getCSVar(context, toVar);
+                JField field = load.getFieldRef().resolve();
                 pts.forEach(baseObj -> {
-                    InstanceField instField = csManager.getInstanceField(
-                            baseObj, field);
-                    addPFGEdge(instField, to, PointerFlowEdge.Kind.INSTANCE_LOAD);
+                    if (baseObj.getObject().isFunctional()) {
+                        InstanceField instField = csManager.getInstanceField(baseObj, field);
+                        addPFGEdge(instField, to, FlowKind.INSTANCE_LOAD);
+                    }
                 });
             }
         }
@@ -350,14 +413,16 @@ public class DefaultSolver implements Solver {
         Var var = arrayVar.getVar();
         for (StoreArray store : var.getStoreArrays()) {
             Var rvalue = store.getRValue();
-            if (isConcerned(rvalue)) {
+            if (propTypes.isAllowed(rvalue)) {
                 CSVar from = csManager.getCSVar(context, rvalue);
                 pts.forEach(array -> {
-                    ArrayIndex arrayIndex = csManager.getArrayIndex(array);
-                    // we need type guard for array stores as Java arrays
-                    // are covariant
-                    addPFGEdge(from, arrayIndex,
-                            PointerFlowEdge.Kind.ARRAY_STORE, arrayIndex.getType());
+                    if (array.getObject().isFunctional()) {
+                        ArrayIndex arrayIndex = csManager.getArrayIndex(array);
+                        // we need type guard for array stores as Java arrays
+                        // are covariant
+                        addPFGEdge(from, arrayIndex,
+                                FlowKind.ARRAY_STORE, arrayIndex.getType());
+                    }
                 });
             }
         }
@@ -374,11 +439,13 @@ public class DefaultSolver implements Solver {
         Var var = arrayVar.getVar();
         for (LoadArray load : var.getLoadArrays()) {
             Var lvalue = load.getLValue();
-            if (isConcerned(lvalue)) {
+            if (propTypes.isAllowed(lvalue)) {
                 CSVar to = csManager.getCSVar(context, lvalue);
                 pts.forEach(array -> {
-                    ArrayIndex arrayIndex = csManager.getArrayIndex(array);
-                    addPFGEdge(arrayIndex, to, PointerFlowEdge.Kind.ARRAY_LOAD);
+                    if (array.getObject().isFunctional()) {
+                        ArrayIndex arrayIndex = csManager.getArrayIndex(array);
+                        addPFGEdge(arrayIndex, to, FlowKind.ARRAY_LOAD);
+                    }
                 });
             }
         }
@@ -434,21 +501,21 @@ public class DefaultSolver implements Solver {
                 // pass arguments to parameters
                 for (int i = 0; i < invokeExp.getArgCount(); ++i) {
                     Var arg = invokeExp.getArg(i);
-                    if (isConcerned(arg)) {
+                    if (propTypes.isAllowed(arg)) {
                         Var param = callee.getIR().getParam(i);
                         CSVar argVar = csManager.getCSVar(callerCtx, arg);
                         CSVar paramVar = csManager.getCSVar(calleeCtx, param);
-                        addPFGEdge(argVar, paramVar, PointerFlowEdge.Kind.PARAMETER_PASSING);
+                        addPFGEdge(argVar, paramVar, FlowKind.PARAMETER_PASSING);
                     }
                 }
                 // pass results to LHS variable
                 Var lhs = callSite.getResult();
-                if (lhs != null && isConcerned(lhs)) {
+                if (lhs != null && propTypes.isAllowed(lhs)) {
                     CSVar csLHS = csManager.getCSVar(callerCtx, lhs);
                     for (Var ret : callee.getIR().getReturnVars()) {
-                        if (isConcerned(ret)) {
+                        if (propTypes.isAllowed(ret)) {
                             CSVar csRet = csManager.getCSVar(calleeCtx, ret);
-                            addPFGEdge(csRet, csLHS, PointerFlowEdge.Kind.RETURN);
+                            addPFGEdge(csRet, csLHS, FlowKind.RETURN);
                         }
                     }
                 }
@@ -459,7 +526,7 @@ public class DefaultSolver implements Solver {
 
     private boolean isIgnored(JMethod method) {
         return ignoredMethods.contains(method) ||
-                onlyApp && !method.getDeclaringClass().isApplication();
+                onlyApp && !method.isApplication();
     }
 
     /**
@@ -468,16 +535,8 @@ public class DefaultSolver implements Solver {
     private void processNewMethod(JMethod method) {
         if (reachableMethods.add(method)) {
             plugin.onNewMethod(method);
+            method.getIR().forEach(stmt -> plugin.onNewStmt(stmt, method));
         }
-    }
-
-    /**
-     * @return true if the type of given expression is concerned in
-     * pointer analysis, otherwise false.
-     */
-    private static boolean isConcerned(Exp exp) {
-        Type type = exp.getType();
-        return type instanceof ReferenceType && !(type instanceof NullType);
     }
 
     private class StmtProcessor {
@@ -594,7 +653,9 @@ public class DefaultSolver implements Solver {
             @Override
             public Void visit(AssignLiteral stmt) {
                 Literal literal = stmt.getRValue();
-                if (isConcerned(literal)) {
+                Type type = literal.getType();
+                if (type instanceof ClassType) {
+                    // here we only generate objects of ClassType
                     Obj obj = heapModel.getConstantObj((ReferenceLiteral) literal);
                     Context heapContext = contextSelector
                             .selectHeapContext(csMethod, obj);
@@ -606,10 +667,10 @@ public class DefaultSolver implements Solver {
             @Override
             public Void visit(Copy stmt) {
                 Var rvalue = stmt.getRValue();
-                if (isConcerned(rvalue)) {
+                if (propTypes.isAllowed(rvalue)) {
                     CSVar from = csManager.getCSVar(context, rvalue);
                     CSVar to = csManager.getCSVar(context, stmt.getLValue());
-                    addPFGEdge(from, to, PointerFlowEdge.Kind.LOCAL_ASSIGN);
+                    addPFGEdge(from, to, FlowKind.LOCAL_ASSIGN);
                 }
                 return null;
             }
@@ -617,10 +678,10 @@ public class DefaultSolver implements Solver {
             @Override
             public Void visit(Cast stmt) {
                 CastExp cast = stmt.getRValue();
-                if (isConcerned(cast.getValue())) {
+                if (propTypes.isAllowed(cast.getValue())) {
                     CSVar from = csManager.getCSVar(context, cast.getValue());
                     CSVar to = csManager.getCSVar(context, stmt.getLValue());
-                    addPFGEdge(from, to, PointerFlowEdge.Kind.CAST, cast.getType());
+                    addPFGEdge(from, to, FlowKind.CAST, cast.getType());
                 }
                 return null;
             }
@@ -630,11 +691,11 @@ public class DefaultSolver implements Solver {
              */
             @Override
             public Void visit(LoadField stmt) {
-                if (stmt.isStatic() && isConcerned(stmt.getRValue())) {
+                if (stmt.isStatic() && propTypes.isAllowed(stmt.getRValue())) {
                     JField field = stmt.getFieldRef().resolve();
                     StaticField sfield = csManager.getStaticField(field);
                     CSVar to = csManager.getCSVar(context, stmt.getLValue());
-                    addPFGEdge(sfield, to, PointerFlowEdge.Kind.STATIC_LOAD);
+                    addPFGEdge(sfield, to, FlowKind.STATIC_LOAD);
                 }
                 return null;
             }
@@ -644,11 +705,11 @@ public class DefaultSolver implements Solver {
              */
             @Override
             public Void visit(StoreField stmt) {
-                if (stmt.isStatic() && isConcerned(stmt.getRValue())) {
+                if (stmt.isStatic() && propTypes.isAllowed(stmt.getRValue())) {
                     JField field = stmt.getFieldRef().resolve();
                     StaticField sfield = csManager.getStaticField(field);
                     CSVar from = csManager.getCSVar(context, stmt.getRValue());
-                    addPFGEdge(from, sfield, PointerFlowEdge.Kind.STATIC_STORE);
+                    addPFGEdge(from, sfield, FlowKind.STATIC_STORE);
                 }
                 return null;
             }
@@ -701,15 +762,58 @@ public class DefaultSolver implements Solver {
     }
 
     @Override
-    public void addPFGEdge(Pointer source, Pointer target, PointerFlowEdge.Kind kind,
+    public void addPointerFilter(Pointer pointer, Predicate<CSObj> filter) {
+        pointer.addFilter(filter);
+    }
+
+    @Override
+    public void addPFGEdge(Pointer source, Pointer target, FlowKind kind,
                            Transfer transfer) {
-        PointerFlowEdge edge = new PointerFlowEdge(kind, source, target, transfer);
-        if (pointerFlowGraph.addEdge(edge)) {
+        PointerFlowEdge edge = pointerFlowGraph.getOrAddEdge(kind, source, target);
+        if (edge != null && edge.addTransfer(transfer)) {
             PointsToSet targetSet = transfer.apply(edge, getPointsToSetOf(source));
             if (!targetSet.isEmpty()) {
                 addPointsTo(target, targetSet);
             }
         }
+    }
+
+    @Override
+    public void addEntryPoint(EntryPoint entryPoint) {
+        Context entryCtx = contextSelector.getEmptyContext();
+        JMethod entryMethod = entryPoint.method();
+        CSMethod csEntryMethod = csManager.getCSMethod(entryCtx, entryMethod);
+        callGraph.addEntryMethod(csEntryMethod);
+        addCSMethod(csEntryMethod);
+        IR ir = entryMethod.getIR();
+        ParamProvider paramProvider = entryPoint.paramProvider();
+        // pass this objects
+        if (!entryMethod.isStatic()) {
+            for (Obj thisObj : paramProvider.getThisObjs()) {
+                addVarPointsTo(entryCtx, ir.getThis(), entryCtx, thisObj);
+            }
+        }
+        // pass parameter objects
+        for (int i = 0; i < entryMethod.getParamCount(); ++i) {
+            Var param = ir.getParam(i);
+            if (propTypes.isAllowed(param)) {
+                for (Obj paramObj : paramProvider.getParamObjs(i)) {
+                    addVarPointsTo(entryCtx, param, entryCtx, paramObj);
+                }
+            }
+        }
+        // pass field objects
+        paramProvider.getFieldObjs().forEach((base, field, obj) -> {
+            CSObj csBase = csManager.getCSObj(entryCtx, base);
+            InstanceField iField = csManager.getInstanceField(csBase, field);
+            addPointsTo(iField, entryCtx, obj);
+        });
+        // pass array objects
+        paramProvider.getArrayObjs().forEach((array, elem) -> {
+            CSObj csArray = csManager.getCSObj(entryCtx, array);
+            ArrayIndex arrayIndex = csManager.getArrayIndex(csArray);
+            addPointsTo(arrayIndex, entryCtx, elem);
+        });
     }
 
     @Override
@@ -732,14 +836,13 @@ public class DefaultSolver implements Solver {
     }
 
     @Override
-    public void addEntryMethod(CSMethod entryMethod) {
-        callGraph.addEntryMethod(entryMethod);
-        addCSMethod(entryMethod);
+    public void addStmts(CSMethod csMethod, Collection<Stmt> stmts) {
+        stmtProcessor.process(csMethod, stmts);
     }
 
     @Override
-    public void addStmts(CSMethod csMethod, Collection<Stmt> stmts) {
-        stmtProcessor.process(csMethod, stmts);
+    public void addIgnoredMethod(JMethod method) {
+        ignoredMethods.add(method);
     }
 
     @Override
@@ -767,14 +870,11 @@ public class DefaultSolver implements Solver {
     }
 
     @Override
-    public void addIgnoredMethod(JMethod method) {
-        ignoredMethods.add(method);
-    }
-
-    @Override
     public PointerAnalysisResult getResult() {
         if (result == null) {
-            result = new PointerAnalysisResultImpl(csManager, heapModel, callGraph);
+            result = new PointerAnalysisResultImpl(
+                    propTypes, csManager, heapModel,
+                    callGraph, pointerFlowGraph);
         }
         return result;
     }

@@ -22,24 +22,23 @@
 
 package pascal.taie.analysis.pta.plugin.util;
 
-import pascal.taie.analysis.pta.core.cs.context.Context;
-import pascal.taie.analysis.pta.core.cs.element.CSManager;
 import pascal.taie.analysis.pta.core.cs.element.CSVar;
-import pascal.taie.analysis.pta.core.cs.selector.ContextSelector;
-import pascal.taie.analysis.pta.core.heap.HeapModel;
 import pascal.taie.analysis.pta.core.solver.Solver;
 import pascal.taie.analysis.pta.pts.PointsToSet;
-import pascal.taie.ir.exp.InvokeExp;
-import pascal.taie.ir.exp.InvokeInstanceExp;
 import pascal.taie.ir.exp.Var;
 import pascal.taie.ir.stmt.Invoke;
-import pascal.taie.language.classes.ClassHierarchy;
 import pascal.taie.language.classes.JMethod;
-import pascal.taie.language.type.TypeSystem;
 import pascal.taie.util.TriConsumer;
 import pascal.taie.util.collection.Maps;
 import pascal.taie.util.collection.MultiMap;
 
+import java.lang.invoke.CallSite;
+import java.lang.invoke.LambdaConversionException;
+import java.lang.invoke.LambdaMetafactory;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -47,29 +46,9 @@ import java.util.Map;
 /**
  * Provides common functionalities for implementing API models.
  */
-public abstract class AbstractModel implements Model {
+public abstract class AbstractModel extends SolverHolder implements Model {
 
-    /**
-     * Special index representing the base variable of an invocation site.
-     */
-    protected static final int BASE = -1;
-
-    protected final Solver solver;
-
-    protected final ClassHierarchy hierarchy;
-
-    protected final TypeSystem typeSystem;
-
-    protected final ContextSelector selector;
-
-    protected final CSManager csManager;
-
-    protected final HeapModel heapModel;
-
-    /**
-     * Default heap context for MethodType objects.
-     */
-    protected final Context defaultHctx;
+    private final MethodHandles.Lookup lookup = MethodHandles.lookup();
 
     protected final Map<JMethod, int[]> relevantVarIndexes = Maps.newHybridMap();
 
@@ -77,23 +56,76 @@ public abstract class AbstractModel implements Model {
             = Maps.newMultiMap(Maps.newHybridMap());
 
     protected final Map<JMethod, TriConsumer<CSVar, PointsToSet, Invoke>> handlers
-            = Maps.newHybridMap();
+            = Maps.newMap();
 
     protected AbstractModel(Solver solver) {
-        this.solver = solver;
-        hierarchy = solver.getHierarchy();
-        typeSystem = solver.getTypeSystem();
-        selector = solver.getContextSelector();
-        csManager = solver.getCSManager();
-        heapModel = solver.getHeapModel();
-        defaultHctx = solver.getContextSelector().getEmptyContext();
-        registerVarAndHandler();
+        super(solver);
+        registerVarAndHandlersByAnnotation();
+        registerVarAndHandlers();
     }
 
-    protected abstract void registerVarAndHandler();
+    private void registerVarAndHandlersByAnnotation() {
+        Class<?> clazz = getClass();
+        for (Method method : clazz.getMethods()) {
+            InvokeHandler[] invokeHandlers = method.getAnnotationsByType(InvokeHandler.class);
+            if (invokeHandlers != null) {
+                for (InvokeHandler invokeHandler : invokeHandlers) {
+                    String signature = invokeHandler.signature();
+                    JMethod api = hierarchy.getMethod(signature);
+                    if (api != null) {
+                        registerRelevantVarIndexes(api, invokeHandler.argIndexes());
+                        registerAPIHandler(api, createHandler(method));
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Creates a handler function (of type {@link TriConsumer}) for given method.
+     * @param method the actual handler method
+     * @return the resulting {@link TriConsumer}.
+     */
+    private TriConsumer<CSVar, PointsToSet, Invoke> createHandler(Method method) {
+        try {
+            MethodHandle handler = lookup.unreflect(method);
+            MethodType handlerType = MethodType.methodType(
+                    method.getReturnType(), method.getParameterTypes());
+            CallSite callSite = LambdaMetafactory.metafactory(lookup,
+                    "accept",
+                    MethodType.methodType(TriConsumer.class, this.getClass()),
+                    handlerType.erase(), handler, handlerType);
+            MethodHandle factory = callSite.getTarget().bindTo(this);
+            @SuppressWarnings ("unchecked")
+            var handlerConsumer = (TriConsumer<CSVar, PointsToSet, Invoke>) factory.invoke();
+            return handlerConsumer;
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException("Failed to access " + method +
+                    ", please make sure that the Model class and the handler method" +
+                    " are public", e);
+        } catch (LambdaConversionException e) {
+            throw new RuntimeException("Failed to create lambda function for " + method +
+                    ", please make sure that the parameter types of handler method" +
+                    " is (CSVar, PointsToSet, Invoke)", e);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    protected void registerVarAndHandlers() {
+    }
 
     protected void registerRelevantVarIndexes(JMethod api, int... indexes) {
         relevantVarIndexes.put(api, indexes);
+    }
+
+    protected void registerAPIHandler(
+            JMethod api, TriConsumer<CSVar, PointsToSet, Invoke> handler) {
+        if (handlers.containsKey(api)) {
+            throw new RuntimeException(this + " registers multiple handlers for " +
+                    api + " (in a Model, at most one handler can be registered for a method)");
+        }
+        handlers.put(api, handler);
     }
 
     @Override
@@ -103,7 +135,7 @@ public abstract class AbstractModel implements Model {
             int[] indexes = relevantVarIndexes.get(target);
             if (indexes != null) {
                 for (int i : indexes) {
-                    relevantVars.put(getArg(invoke, i), invoke);
+                    relevantVars.put(InvokeUtils.getVar(invoke, i), invoke);
                 }
             }
         }
@@ -112,11 +144,6 @@ public abstract class AbstractModel implements Model {
     @Override
     public boolean isRelevantVar(Var var) {
         return relevantVars.containsKey(var);
-    }
-
-    protected void registerAPIHandler(
-            JMethod api, TriConsumer<CSVar, PointsToSet, Invoke> handler) {
-        handlers.put(api, handler);
     }
 
     @Override
@@ -132,7 +159,7 @@ public abstract class AbstractModel implements Model {
 
     /**
      * For invocation r = v.foo(a0, a1, ..., an);
-     * when points-to set of v or any ai (0 <= i <= n) changes,
+     * when points-to set of v or any ai (0 &le; i &le; n) changes,
      * this convenient method returns points-to sets relevant arguments.
      * For case v/ai == csVar.getVar(), this method returns pts,
      * otherwise, it just returns current points-to set of v/ai.
@@ -146,7 +173,7 @@ public abstract class AbstractModel implements Model {
             CSVar csVar, PointsToSet pts, Invoke invoke, int... indexes) {
         List<PointsToSet> args = new ArrayList<>(indexes.length);
         for (int i : indexes) {
-            Var arg = getArg(invoke, i);
+            Var arg = InvokeUtils.getVar(invoke, i);
             if (arg.equals(csVar.getVar())) {
                 args.add(pts);
             } else {
@@ -155,12 +182,5 @@ public abstract class AbstractModel implements Model {
             }
         }
         return args;
-    }
-
-    private static Var getArg(Invoke invoke, int i) {
-        InvokeExp invokeExp = invoke.getInvokeExp();
-        return i == BASE ?
-                ((InvokeInstanceExp) invokeExp).getBase() :
-                invokeExp.getArg(i);
     }
 }

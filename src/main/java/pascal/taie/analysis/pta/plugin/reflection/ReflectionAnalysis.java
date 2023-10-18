@@ -22,77 +22,114 @@
 
 package pascal.taie.analysis.pta.plugin.reflection;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import pascal.taie.analysis.graph.callgraph.Edge;
 import pascal.taie.analysis.pta.core.cs.context.Context;
 import pascal.taie.analysis.pta.core.cs.element.ArrayIndex;
 import pascal.taie.analysis.pta.core.cs.element.CSCallSite;
 import pascal.taie.analysis.pta.core.cs.element.CSManager;
 import pascal.taie.analysis.pta.core.cs.element.CSMethod;
+import pascal.taie.analysis.pta.core.cs.element.CSObj;
 import pascal.taie.analysis.pta.core.cs.element.CSVar;
 import pascal.taie.analysis.pta.core.solver.Solver;
 import pascal.taie.analysis.pta.plugin.Plugin;
 import pascal.taie.analysis.pta.plugin.util.Model;
+import pascal.taie.analysis.pta.plugin.util.Reflections;
 import pascal.taie.analysis.pta.pts.PointsToSet;
 import pascal.taie.ir.exp.Var;
 import pascal.taie.ir.stmt.Invoke;
+import pascal.taie.ir.stmt.Stmt;
 import pascal.taie.language.classes.JMethod;
 import pascal.taie.language.type.ArrayType;
 import pascal.taie.language.type.ClassType;
 import pascal.taie.language.type.Type;
+import pascal.taie.util.collection.MapEntry;
 import pascal.taie.util.collection.Maps;
 import pascal.taie.util.collection.MultiMap;
 
-import static pascal.taie.analysis.pta.core.solver.PointerFlowEdge.Kind.PARAMETER_PASSING;
-import static pascal.taie.analysis.pta.core.solver.PointerFlowEdge.Kind.RETURN;
+import javax.annotation.Nullable;
+import java.util.Comparator;
+import java.util.Set;
+
+import static pascal.taie.analysis.graph.flowgraph.FlowKind.PARAMETER_PASSING;
+import static pascal.taie.analysis.graph.flowgraph.FlowKind.RETURN;
 
 public class ReflectionAnalysis implements Plugin {
 
-    private Model classModel;
+    private static final Logger logger = LogManager.getLogger(ReflectionAnalysis.class);
 
-    private MetaObjModel metaObjModel;
-
-    private Model reflectiveActionModel;
+    private static final int IMPRECISE_THRESHOLD = 50;
 
     private Solver solver;
 
     private CSManager csManager;
+
+    private InferenceModel inferenceModel;
+
+    @Nullable
+    private LogBasedModel logBasedModel;
+
+    private ReflectiveActionModel reflectiveActionModel;
+
+    private AnnotationModel annotationModel;
+
+    private Model othersModel;
 
     private final MultiMap<Var, ReflectiveCallEdge> reflectiveArgs = Maps.newMultiMap();
 
     @Override
     public void setSolver(Solver solver) {
         this.solver = solver;
-        classModel = new ClassModel(solver);
-        if (solver.getOptions().getString("reflection-log") != null) {
-            metaObjModel = new LogBasedModel(solver);
-        } else {
-            metaObjModel = new StringBasedModel(solver);
-        }
-        reflectiveActionModel = new ReflectiveActionModel(solver);
         csManager = solver.getCSManager();
+
+        MetaObjHelper helper = new MetaObjHelper(solver);
+        TypeMatcher typeMatcher = new TypeMatcher(solver.getTypeSystem());
+        String logPath = solver.getOptions().getString("reflection-log");
+        if (logPath != null) {
+            logBasedModel = new LogBasedModel(solver, helper, logPath);
+        }
+        Set<Invoke> invokesWithLog = logBasedModel != null
+                ? logBasedModel.getInvokesWithLog() : Set.of();
+        String reflection = solver.getOptions().getString("reflection-inference");
+        if ("string-constant".equals(reflection)) {
+            inferenceModel = new StringBasedModel(solver, helper, invokesWithLog);
+        } else if ("solar".equals(reflection)) {
+            inferenceModel = new SolarModel(solver, helper, typeMatcher, invokesWithLog);
+        } else if (reflection == null) {
+            inferenceModel = new DummyModel(solver);
+        } else {
+            throw new IllegalArgumentException("Illegal reflection option: " + reflection);
+        }
+        reflectiveActionModel = new ReflectiveActionModel(solver, helper,
+                typeMatcher, invokesWithLog);
+        annotationModel = new AnnotationModel(solver, helper);
+        othersModel = new OthersModel(solver, helper);
     }
 
     @Override
-    public void onNewMethod(JMethod method) {
-        method.getIR()
-                .invokes(false)
-                .forEach(invoke -> {
-                    classModel.handleNewInvoke(invoke);
-                    metaObjModel.handleNewInvoke(invoke);
-                    reflectiveActionModel.handleNewInvoke(invoke);
-                });
+    public void onNewStmt(Stmt stmt, JMethod container) {
+        if (stmt instanceof Invoke invoke) {
+            if (!invoke.isDynamic()) {
+                inferenceModel.handleNewInvoke(invoke);
+                reflectiveActionModel.handleNewInvoke(invoke);
+                othersModel.handleNewInvoke(invoke);
+            }
+        } else {
+            inferenceModel.handleNewNonInvokeStmt(stmt);
+        }
     }
 
     @Override
     public void onNewPointsToSet(CSVar csVar, PointsToSet pts) {
-        if (classModel.isRelevantVar(csVar.getVar())) {
-            classModel.handleNewPointsToSet(csVar, pts);
-        }
-        if (metaObjModel.isRelevantVar(csVar.getVar())) {
-            metaObjModel.handleNewPointsToSet(csVar, pts);
+        if (inferenceModel.isRelevantVar(csVar.getVar())) {
+            inferenceModel.handleNewPointsToSet(csVar, pts);
         }
         if (reflectiveActionModel.isRelevantVar(csVar.getVar())) {
             reflectiveActionModel.handleNewPointsToSet(csVar, pts);
+        }
+        if (othersModel.isRelevantVar(csVar.getVar())) {
+            othersModel.handleNewPointsToSet(csVar, pts);
         }
         reflectiveArgs.get(csVar.getVar())
                 .forEach(edge -> passReflectiveArgs(edge, pts));
@@ -100,7 +137,14 @@ public class ReflectionAnalysis implements Plugin {
 
     @Override
     public void onNewCSMethod(CSMethod csMethod) {
-        metaObjModel.handleNewCSMethod(csMethod);
+        if (logBasedModel != null) {
+            logBasedModel.handleNewCSMethod(csMethod);
+        }
+    }
+
+    @Override
+    public void onUnresolvedCall(CSObj recv, Context context, Invoke invoke) {
+        annotationModel.onUnresolvedCall(recv, context, invoke);
     }
 
     @Override
@@ -145,10 +189,56 @@ public class ReflectionAnalysis implements Plugin {
         });
     }
 
-    /**
-     * TODO: merge with DefaultSolver.isConcerned(Exp)
-     */
     private static boolean isConcerned(Type type) {
         return type instanceof ClassType || type instanceof ArrayType;
+    }
+
+    @Override
+    public void onFinish() {
+        if (inferenceModel instanceof SolarModel solar) {
+            solar.reportUnsoundCalls();
+        }
+        reportImpreciseCalls();
+    }
+
+    /**
+     * Report that may be resolved imprecisely.
+     */
+    private void reportImpreciseCalls() {
+        MultiMap<Invoke, Object> allTargets = collectAllTargets();
+        Set<Invoke> invokesWithLog = logBasedModel != null
+                ? logBasedModel.getInvokesWithLog() : Set.of();
+        var impreciseCalls = allTargets.keySet()
+                .stream()
+                .map(invoke -> new MapEntry<>(invoke, allTargets.get(invoke)))
+                .filter(e -> !invokesWithLog.contains(e.getKey()))
+                .filter(e -> e.getValue().size() > IMPRECISE_THRESHOLD)
+                .toList();
+        if (!impreciseCalls.isEmpty()) {
+            logger.info("Imprecise reflective calls:");
+            impreciseCalls.stream()
+                    .sorted(Comparator.comparingInt(
+                            (MapEntry<Invoke, Set<Object>> e) -> -e.getValue().size())
+                            .thenComparing(MapEntry::getKey))
+                    .forEach(e -> {
+                        Invoke invoke = e.getKey();
+                        String shortName = Reflections.getShortName(invoke);
+                        logger.info("[{}]{}, #targets: {}",
+                                shortName, invoke, e.getValue().size());
+                    });
+        }
+    }
+
+    /**
+     * Collects all reflective targets resolved by reflection analysis.
+     */
+    private MultiMap<Invoke, Object> collectAllTargets() {
+        MultiMap<Invoke, Object> allTargets = Maps.newMultiMap();
+        if (logBasedModel != null) {
+            allTargets.putAll(logBasedModel.getForNameTargets());
+        }
+        allTargets.putAll(inferenceModel.getForNameTargets());
+        allTargets.putAll(reflectiveActionModel.getAllTargets());
+        return allTargets;
     }
 }

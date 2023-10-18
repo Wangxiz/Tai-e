@@ -25,6 +25,10 @@ package pascal.taie.analysis.pta.toolkit.zipper;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import pascal.taie.analysis.graph.flowgraph.InstanceNode;
+import pascal.taie.analysis.graph.flowgraph.Node;
+import pascal.taie.analysis.graph.flowgraph.ObjectFlowGraph;
+import pascal.taie.analysis.graph.flowgraph.VarNode;
 import pascal.taie.analysis.pta.PointerAnalysisResult;
 import pascal.taie.analysis.pta.core.heap.Obj;
 import pascal.taie.analysis.pta.toolkit.PointerAnalysisResultEx;
@@ -45,7 +49,6 @@ import java.util.Deque;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -111,8 +114,10 @@ public class Zipper {
                 "Building OAG", Level.INFO);
         this.pce = Timer.runAndCount(() -> new PotentialContextElement(pta, oag),
                 "Building PCE", Level.INFO);
-        this.ofg = Timer.runAndCount(() -> new ObjectFlowGraph(ptaBase),
-                "Building OFG", Level.INFO);
+        this.ofg = ptaBase.getObjectFlowGraph();
+        logger.info("{} nodes in OFG", ofg.getNodes().size());
+        logger.info("{} edges in OFG",
+                ofg.getNodes().stream().mapToInt(ofg::getOutDegreeOf).sum());
     }
 
     /**
@@ -122,7 +127,7 @@ public class Zipper {
     public Set<JMethod> selectPrecisionCriticalMethods() {
         totalPFGNodes = new AtomicInteger(0);
         totalPFGEdges = new AtomicInteger(0);
-        pcmMap = new ConcurrentHashMap<>(1024);
+        pcmMap = Maps.newConcurrentMap(1024);
 
         // prepare information for Zipper-e
         if (isExpress) {
@@ -134,7 +139,7 @@ public class Zipper {
                 if (size > 0) {
                     totalPts += size;
                     methodPts.computeIfAbsent(var.getMethod(),
-                                    unused -> new MutableInt(0))
+                                    __ -> new MutableInt(0))
                             .add(size);
                 }
             }
@@ -176,12 +181,12 @@ public class Zipper {
                 .stream()
                 .map(Zipper::node2Method)
                 .filter(Objects::nonNull)
-                .filter(pce.PCEMethodsOf(pfg.getType())::contains)
+                .filter(pce.pceMethodsOf(pfg.getType())::contains)
                 .collect(Collectors.toUnmodifiableSet());
         if (isExpress) {
             int accPts = 0;
             for (JMethod m : pcms) {
-                accPts += methodPts.get(m).get();
+                accPts += methodPts.get(m).intValue();
             }
             if (accPts > pcmThreshold) {
                 // clear precision-critical method group whose accumulative
@@ -192,13 +197,13 @@ public class Zipper {
         return pcms;
     }
 
-    private static Set<FGNode> getFlowNodes(PrecisionFlowGraph pfg) {
-        Set<FGNode> visited = Sets.newSet();
+    private static Set<Node> getFlowNodes(PrecisionFlowGraph pfg) {
+        Set<Node> visited = Sets.newSet();
         for (VarNode outNode : pfg.getOutNodes()) {
-            Deque<FGNode> workList = new ArrayDeque<>();
+            Deque<Node> workList = new ArrayDeque<>();
             workList.add(outNode);
             while (!workList.isEmpty()) {
-                FGNode node = workList.poll();
+                Node node = workList.poll();
                 if (visited.add(node)) {
                     pfg.getPredsOf(node)
                             .stream()
@@ -214,7 +219,7 @@ public class Zipper {
      * @return containing method of {@code node}.
      */
     @Nullable
-    private static JMethod node2Method(FGNode node) {
+    private static JMethod node2Method(Node node) {
         if (node instanceof VarNode varNode) {
             return varNode.getVar().getMethod();
         } else {

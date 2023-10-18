@@ -22,24 +22,34 @@
 
 package pascal.taie.analysis;
 
-import org.junit.Assert;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import pascal.taie.Main;
 import pascal.taie.World;
 import pascal.taie.analysis.graph.cfg.CFGBuilder;
+import pascal.taie.analysis.misc.IRDumper;
 import pascal.taie.analysis.misc.ResultProcessor;
 import pascal.taie.analysis.pta.PointerAnalysis;
 
-import java.nio.file.Paths;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 /**
  * Static utility methods for testing.
  */
 public final class Tests {
+
+    private static final Logger logger = LogManager.getLogger(Tests.class);
 
     private Tests() {
     }
@@ -50,23 +60,62 @@ public final class Tests {
     private static final boolean GENERATE_EXPECTED_RESULTS = false;
 
     /**
+     * Whether dump IR or not.
+     */
+    private static final boolean DUMP_IR = false;
+
+    /**
      * Whether dump control-flow graphs or not.
      */
     private static final boolean DUMP_CFG = false;
 
     /**
      * Starts an analysis for a specific test case.
+     * Requires a main method in the given class.
      *
-     * @param main      the main class to be analyzed
+     * @param mainClass the main class to be analyzed
      * @param classPath where the main class is located
      * @param id        ID of the analysis to be executed
      * @param opts      options for the analysis
      */
-    public static void test(String main, String classPath, String id, String... opts) {
+    public static void testMain(String mainClass, String classPath,
+                                String id, String... opts) {
+        test(mainClass, true, classPath, id, opts);
+    }
+
+    /**
+     * Starts an analysis for a specific test case.
+     * Do not require a main method in the given class.
+     *
+     * @param inputClass the input class to be analyzed
+     * @param classPath  where the input class is located
+     * @param id         ID of the analysis to be executed
+     * @param opts       options for the analysis
+     */
+    public static void testInput(String inputClass, String classPath,
+                                 String id, String... opts) {
+        test(inputClass, false, classPath, id, opts);
+    }
+
+    /**
+     * Starts an analysis for a specific test case.
+     *
+     * @param clz         the class to be analyzed
+     * @param isMainClass if the class contains main method
+     * @param classPath   where the main class is located
+     * @param id          ID of the analysis to be executed
+     * @param opts        options for the analysis
+     */
+    private static void test(String clz, boolean isMainClass,
+                             String classPath, String id, String... opts) {
         List<String> args = new ArrayList<>();
         args.add("-pp");
         Collections.addAll(args, "-cp", classPath);
-        Collections.addAll(args, "-m", main);
+        Collections.addAll(args, isMainClass ? "-m" : "--input-classes", clz);
+        if (DUMP_IR) {
+            // dump IR
+            Collections.addAll(args, "-a", IRDumper.ID);
+        }
         if (DUMP_CFG) {
             // dump control-flow graphs
             Collections.addAll(args, "-a",
@@ -84,16 +133,16 @@ public final class Tests {
         }
         // set up result processor
         String action = GENERATE_EXPECTED_RESULTS ? "dump" : "compare";
-        String file = getExpectedFile(classPath, main, id);
+        String file = getExpectedFile(classPath, clz, id);
         String processArg = String.format("%s=analyses:[%s];action:%s;action-file:%s",
                 ResultProcessor.ID, id, action, file);
         Collections.addAll(args, "-a", processArg);
         Main.main(args.toArray(new String[0]));
         if (action.equals("compare")) {
             Set<String> mismatches = World.get().getResult(ResultProcessor.ID);
-            Assert.assertTrue("Mismatches of analysis \"" + id + "\":\n" +
-                            String.join("\n", mismatches),
-                    mismatches.isEmpty());
+            assertTrue(mismatches.isEmpty(),
+                    "Mismatches of analysis \"" + id + "\":\n" +
+                            String.join("\n", mismatches));
         }
     }
 
@@ -108,13 +157,16 @@ public final class Tests {
         String classPath = "src/test/resources/pta/" + dir;
         Collections.addAll(args, "-cp", classPath);
         Collections.addAll(args, "-m", main);
+        if (DUMP_IR) {
+            // dump IR
+            Collections.addAll(args, "-a", IRDumper.ID);
+        }
         List<String> ptaArgs = new ArrayList<>();
         ptaArgs.add("implicit-entries:false");
+        String expectedFile = getExpectedFile(classPath, main, id);
         if (processResult) {
-            String action = GENERATE_EXPECTED_RESULTS ? "dump" : "compare";
-            ptaArgs.add("action:" + action);
-            String file = getExpectedFile(classPath, main, id);
-            ptaArgs.add("action-file:" + file);
+            ptaArgs.add(GENERATE_EXPECTED_RESULTS ? "dump:true"
+                    : "expected-file:" + expectedFile);
         }
         boolean specifyOnlyApp = false;
         for (String opt : opts) {
@@ -129,6 +181,16 @@ public final class Tests {
         }
         Collections.addAll(args, "-a", id + "=" + String.join(";", ptaArgs));
         Main.main(args.toArray(new String[0]));
+        // move expected file
+        if (processResult && GENERATE_EXPECTED_RESULTS) {
+            try {
+                Path from = new File(World.get().getOptions().getOutputDir(),
+                        pascal.taie.analysis.pta.plugin.ResultProcessor.RESULTS_FILE).toPath();
+                Files.move(from, Path.of(expectedFile), StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                logger.error("Failed to copy expected file", e);
+            }
+        }
     }
 
     /**
@@ -139,6 +201,6 @@ public final class Tests {
      */
     private static String getExpectedFile(String dir, String main, String id) {
         String fileName = String.format("%s-%s-expected.txt", main, id);
-        return Paths.get(dir, fileName).toString();
+        return Path.of(dir, fileName).toString();
     }
 }

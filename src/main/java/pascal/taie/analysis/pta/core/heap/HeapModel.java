@@ -49,46 +49,33 @@ public interface HeapModel extends Indexer<Obj> {
     Obj getConstantObj(ReferenceLiteral value);
 
     /**
-     * @return the mock object for given arguments.
+     * @return {@code true} if {@code obj} represents a string constant.
      */
-    Obj getMockObj(String desc, Object alloc, Type type, JMethod container);
+    boolean isStringConstant(Obj obj);
+
+    Obj getMockObj(Descriptor desc, Object alloc, Type type,
+                   JMethod container, boolean isFunctional);
 
     /**
      * @return the mock object for given arguments.
      */
-    default Obj getMockObj(String desc, Object alloc, Type type) {
-        return getMockObj(desc, alloc, type, null);
+    default Obj getMockObj(Descriptor desc, Object alloc, Type type, JMethod container) {
+        return getMockObj(desc, alloc, type, container, true);
     }
 
-    // ------------------------------------------------------------------------
-    // APIs for retrieving specific runtime environment objects
-    // ------------------------------------------------------------------------
+    /**
+     * @return the mock object for given arguments.
+     */
+    default Obj getMockObj(Descriptor desc, Object alloc, Type type, boolean isFunctional) {
+        return getMockObj(desc, alloc, type, null, isFunctional);
+    }
 
     /**
-     * @return the system ThreadGroup object.
+     * @return the mock object for given arguments.
      */
-    Obj getSystemThreadGroup();
-
-    /**
-     * @return the main ThreadGroup object.
-     */
-    Obj getMainThreadGroup();
-
-    /**
-     * @return the main Thread object.
-     */
-    Obj getMainThread();
-
-    /**
-     * @return args in main(String[] args).
-     */
-    Obj getMainArgs();
-
-    /**
-     * @return element(s) in args.
-     */
-    Obj getMainArgsElem();
-    // ---------- runtime environment objects (end) ----------
+    default Obj getMockObj(Descriptor desc, Object alloc, Type type) {
+        return getMockObj(desc, alloc, type, null);
+    }
 
     /**
      * @return all objects in this heap model.

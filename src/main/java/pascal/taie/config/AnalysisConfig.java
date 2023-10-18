@@ -27,10 +27,10 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import pascal.taie.util.collection.Maps;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -85,7 +85,7 @@ public class AnalysisConfig {
      * to illustrate require items.
      * requires: [A1,A2] # requires analyses A1 and A2
      * requires: [A(x=y)] # requires A when value of option x is y
-     * requires: [A(x=y&a=b)] # requires A when value of option x is y
+     * requires: [A(x=y&amp;a=b)] # requires A when value of option x is y
      * and value of option a is b
      * requires: [A(x=a|b|c)] # requires A when value of option x is
      * a, b, or c.
@@ -131,7 +131,7 @@ public class AnalysisConfig {
      * to AnalysisOptions.
      */
     private static AnalysisOptions convertOptions(Object[] options) {
-        Map<String, Object> optionsMap = new LinkedHashMap<>();
+        Map<String, Object> optionsMap = Maps.newLinkedHashMap();
         for (int i = 0; i < options.length; i += 2) {
             optionsMap.put((String) options[i], options[i + 1]);
         }

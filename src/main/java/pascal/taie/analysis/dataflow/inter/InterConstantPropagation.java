@@ -60,7 +60,7 @@ import static pascal.taie.ir.exp.Exps.holdsInt;
 public class InterConstantPropagation extends
         AbstractInterDataflowAnalysis<JMethod, Stmt, CPFact> {
 
-    public static final String ID = "inter-constprop";
+    public static final String ID = "inter-const-prop";
 
     private final ConstantPropagation.Analysis cp;
 
@@ -142,7 +142,7 @@ public class InterConstantPropagation extends
                                 pointedBy.put(obj, v)));
         arrayStoreToLoads = Maps.newMultiMap();
         arrayLoadToStores = Maps.newMultiMap();
-        pointedBy.forEachSet((unused, aliases) -> {
+        pointedBy.forEachSet((__, aliases) -> {
             for (Var v : aliases) {
                 for (StoreField store : v.getStoreFields()) {
                     if (!store.isStatic() && holdsInt(store.getRValue())) {
@@ -313,7 +313,7 @@ public class InterConstantPropagation extends
     @Override
     protected CPFact transferCallToReturnEdge(CallToReturnEdge<Stmt> edge, CPFact out) {
         // Kill the value of LHS variable
-        Invoke invoke = (Invoke) edge.getSource();
+        Invoke invoke = (Invoke) edge.source();
         Var lhs = invoke.getResult();
         if (lhs != null) {
             CPFact result = out.copy();
@@ -327,7 +327,7 @@ public class InterConstantPropagation extends
     @Override
     protected CPFact transferCallEdge(CallEdge<Stmt> edge, CPFact callSiteOut) {
         // Passing arguments at call site to parameters of the callee
-        InvokeExp invokeExp = ((Invoke) edge.getSource()).getInvokeExp();
+        InvokeExp invokeExp = ((Invoke) edge.source()).getInvokeExp();
         JMethod callee = edge.getCallee();
         CPFact result = newInitialFact();
         if (!(invokeExp instanceof InvokeDynamic) &&

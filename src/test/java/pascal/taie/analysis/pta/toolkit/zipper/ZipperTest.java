@@ -22,15 +22,20 @@
 
 package pascal.taie.analysis.pta.toolkit.zipper;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import pascal.taie.World;
 import pascal.taie.analysis.Tests;
+import pascal.taie.analysis.graph.flowgraph.FlowGraphDumper;
+import pascal.taie.analysis.graph.flowgraph.ObjectFlowGraph;
 import pascal.taie.analysis.pta.PointerAnalysis;
 import pascal.taie.analysis.pta.PointerAnalysisResult;
 import pascal.taie.analysis.pta.core.heap.Obj;
 import pascal.taie.analysis.pta.toolkit.PointerAnalysisResultExImpl;
 import pascal.taie.util.graph.DotDumper;
 
+import java.io.File;
 import java.util.stream.Stream;
 
 public class ZipperTest {
@@ -42,7 +47,7 @@ public class ZipperTest {
     private static final String MISC = "misc";
 
     @Test
-    public void testOAG() {
+    void testOAG() {
         dumpOAG(CS, "TwoObject", "cs:2-obj");
     }
 
@@ -51,24 +56,32 @@ public class ZipperTest {
         PointerAnalysisResult pta = World.get().getResult(PointerAnalysis.ID);
         ObjectAllocationGraph oag = new ObjectAllocationGraph(
                 new PointerAnalysisResultExImpl(pta, true));
-        new DotDumper<Obj>().dump(oag, "output/" + main + "-oag.dot");
+        File output = new File(World.get().getOptions().getOutputDir(), main + "-oag.dot");
+        new DotDumper<Obj>().dump(oag, output);
     }
 
-    @Test
-    public void testOFG() {
-        Stream.of("Cast", "StoreLoad", "Array", "CallParamRet", "Cycle")
-                .forEach(main -> dumpOFG(BASIC, main));
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Cast",
+            "StoreLoad",
+            "Array",
+            "CallParamRet",
+            "Cycle",
+    })
+    void testOFG(String mainClass) {
+        dumpOFG(BASIC, mainClass);
     }
 
     private static void dumpOFG(String dir, String main) {
         Tests.testPTA(false, dir, main);
         PointerAnalysisResult pta = World.get().getResult(PointerAnalysis.ID);
-        ObjectFlowGraph ofg = new ObjectFlowGraph(pta);
-        FGDumper.dump(ofg, "output/" + main + "-ofg.dot");
+        ObjectFlowGraph ofg = pta.getObjectFlowGraph();
+        File output = new File(World.get().getOptions().getOutputDir(), main + "-ofg.dot");
+        FlowGraphDumper.dump(ofg, output);
     }
 
     @Test
-    public void testPFGBuilder() {
-        Tests.testPTA(false, MISC, "Zipper", "pre:zipper");
+    void testPFGBuilder() {
+        Tests.testPTA(false, MISC, "Zipper", "advanced:zipper");
     }
 }

@@ -22,141 +22,68 @@
 
 package pascal.taie.analysis.pta.plugin.reflection;
 
-import pascal.taie.analysis.pta.core.cs.element.CSMethod;
+import pascal.taie.analysis.pta.core.cs.context.Context;
 import pascal.taie.analysis.pta.core.cs.element.CSVar;
-import pascal.taie.analysis.pta.core.heap.Obj;
 import pascal.taie.analysis.pta.core.solver.Solver;
 import pascal.taie.analysis.pta.plugin.util.CSObjs;
-import pascal.taie.analysis.pta.plugin.util.Reflections;
+import pascal.taie.analysis.pta.plugin.util.InvokeHandler;
 import pascal.taie.analysis.pta.pts.PointsToSet;
-import pascal.taie.ir.exp.Var;
 import pascal.taie.ir.stmt.Invoke;
+import pascal.taie.ir.stmt.Stmt;
 import pascal.taie.language.classes.JClass;
 
 import java.util.List;
+import java.util.Set;
 
-class StringBasedModel extends MetaObjModel {
+import static pascal.taie.analysis.pta.plugin.util.InvokeUtils.BASE;
 
-    StringBasedModel(Solver solver) {
-        super(solver);
+public class StringBasedModel extends InferenceModel {
+
+    StringBasedModel(Solver solver, MetaObjHelper helper, Set<Invoke> invokesWithLog) {
+        super(solver, helper, invokesWithLog);
     }
 
     @Override
-    protected void registerVarAndHandler() {
-        registerRelevantVarIndexes(get("getConstructor"), BASE);
-        registerAPIHandler(get("getConstructor"), this::getConstructor);
-
-        registerRelevantVarIndexes(get("getDeclaredConstructor"), BASE);
-        registerAPIHandler(get("getDeclaredConstructor"), this::getDeclaredConstructor);
-
-        registerRelevantVarIndexes(get("getMethod"), BASE, 0);
-        registerAPIHandler(get("getMethod"), this::getMethod);
-
-        registerRelevantVarIndexes(get("getDeclaredMethod"), BASE, 0);
-        registerAPIHandler(get("getDeclaredMethod"), this::getDeclaredMethod);
+    protected void handleNewNonInvokeStmt(Stmt stmt) {
+        // nothing to do
     }
 
-    private void getConstructor(CSVar csVar, PointsToSet pts, Invoke invoke) {
-        Var result = invoke.getResult();
-        if (result != null) {
-            PointsToSet ctorObjs = solver.makePointsToSet();
-            pts.forEach(obj -> {
-                JClass jclass = CSObjs.toClass(obj);
-                if (jclass != null) {
-                    Reflections.getConstructors(jclass)
-                            .map(ctor -> {
-                                Obj ctorObj = getReflectionObj(ctor);
-                                return csManager.getCSObj(defaultHctx, ctorObj);
-                            })
-                            .forEach(ctorObjs::addObject);
-                }
-            });
-            if (!ctorObjs.isEmpty()) {
-                solver.addVarPointsTo(csVar.getContext(), result, ctorObjs);
-            }
+    @InvokeHandler(signature = "<java.lang.Class: java.lang.Class forName(java.lang.String)>", argIndexes = {0})
+    @InvokeHandler(signature = "<java.lang.Class: java.lang.Class forName(java.lang.String,boolean,java.lang.ClassLoader)>", argIndexes = {0})
+    public void classForName(CSVar csVar, PointsToSet pts, Invoke invoke) {
+        if (invokesWithLog.contains(invoke)) {
+            return;
         }
+        Context context = csVar.getContext();
+        pts.forEach(obj -> classForNameKnown(context, invoke, CSObjs.toString(obj)));
     }
 
-    private void getDeclaredConstructor(CSVar csVar, PointsToSet pts, Invoke invoke) {
-        Var result = invoke.getResult();
-        if (result != null) {
-            PointsToSet ctorObjs = solver.makePointsToSet();
-            pts.forEach(obj -> {
-                JClass jclass = CSObjs.toClass(obj);
-                if (jclass != null) {
-                    Reflections.getDeclaredConstructors(jclass)
-                            .map(ctor -> {
-                                Obj ctorObj = getReflectionObj(ctor);
-                                return csManager.getCSObj(defaultHctx, ctorObj);
-                            })
-                            .forEach(ctorObjs::addObject);
-                }
-            });
-            if (!ctorObjs.isEmpty()) {
-                solver.addVarPointsTo(csVar.getContext(), result, ctorObjs);
-            }
+    @InvokeHandler(signature = "<java.lang.Class: java.lang.reflect.Constructor getConstructor(java.lang.Class[])>", argIndexes = {BASE})
+    @InvokeHandler(signature = "<java.lang.Class: java.lang.reflect.Constructor getDeclaredConstructor(java.lang.Class[])>", argIndexes = {BASE})
+    public void classGetConstructor(CSVar csVar, PointsToSet pts, Invoke invoke) {
+        if (invokesWithLog.contains(invoke)) {
+            return;
         }
+        Context context = csVar.getContext();
+        pts.forEach(obj -> classGetConstructorKnown(context, invoke, CSObjs.toClass(obj)));
     }
 
-    private void getMethod(CSVar csVar, PointsToSet pts, Invoke invoke) {
-        Var result = invoke.getResult();
-        if (result != null) {
-            List<PointsToSet> args = getArgs(csVar, pts, invoke, BASE, 0);
-            PointsToSet clsObjs = args.get(0);
-            PointsToSet nameObjs = args.get(1);
-            PointsToSet mtdObjs = solver.makePointsToSet();
-            clsObjs.forEach(clsObj -> {
-                JClass cls = CSObjs.toClass(clsObj);
-                if (cls != null) {
-                    nameObjs.forEach(nameObj -> {
-                        String name = CSObjs.toString(nameObj);
-                        if (name != null) {
-                            Reflections.getMethods(cls, name)
-                                    .map(mtd -> {
-                                        Obj mtdObj = getReflectionObj(mtd);
-                                        return csManager.getCSObj(defaultHctx, mtdObj);
-                                    })
-                                    .forEach(mtdObjs::addObject);
-                        }
-                    });
-                }
-            });
-            if (!mtdObjs.isEmpty()) {
-                solver.addVarPointsTo(csVar.getContext(), result, mtdObjs);
-            }
+    @InvokeHandler(signature = "<java.lang.Class: java.lang.reflect.Method getMethod(java.lang.String,java.lang.Class[])>", argIndexes = {BASE, 0})
+    @InvokeHandler(signature = "<java.lang.Class: java.lang.reflect.Method getDeclaredMethod(java.lang.String,java.lang.Class[])>", argIndexes = {BASE, 0})
+    public void classGetMethod(CSVar csVar, PointsToSet pts, Invoke invoke) {
+        if (invokesWithLog.contains(invoke)) {
+            return;
         }
-    }
-
-    private void getDeclaredMethod(CSVar csVar, PointsToSet pts, Invoke invoke) {
-        Var result = invoke.getResult();
-        if (result != null) {
-            List<PointsToSet> args = getArgs(csVar, pts, invoke, BASE, 0);
-            PointsToSet clsObjs = args.get(0);
-            PointsToSet nameObjs = args.get(1);
-            PointsToSet mtdObjs = solver.makePointsToSet();
-            clsObjs.forEach(clsObj -> {
-                JClass cls = CSObjs.toClass(clsObj);
-                if (cls != null) {
-                    nameObjs.forEach(nameObj -> {
-                        String name = CSObjs.toString(nameObj);
-                        if (name != null) {
-                            Reflections.getDeclaredMethods(cls, name)
-                                    .map(mtd -> {
-                                        Obj mtdObj = getReflectionObj(mtd);
-                                        return csManager.getCSObj(defaultHctx, mtdObj);
-                                    })
-                                    .forEach(mtdObjs::addObject);
-                        }
-                    });
-                }
+        List<PointsToSet> args = getArgs(csVar, pts, invoke, BASE, 0);
+        PointsToSet classObjs = args.get(0);
+        PointsToSet nameObjs = args.get(1);
+        Context context = csVar.getContext();
+        classObjs.forEach(classObj -> {
+            JClass clazz = CSObjs.toClass(classObj);
+            nameObjs.forEach(nameObj -> {
+                String name = CSObjs.toString(nameObj);
+                classGetMethodKnown(context, invoke, clazz, name);
             });
-            if (!mtdObjs.isEmpty()) {
-                solver.addVarPointsTo(csVar.getContext(), result, mtdObjs);
-            }
-        }
-    }
-
-    @Override
-    void handleNewCSMethod(CSMethod csMethod) {
+        });
     }
 }

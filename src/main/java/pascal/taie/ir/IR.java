@@ -27,9 +27,11 @@ import pascal.taie.ir.proginfo.ExceptionEntry;
 import pascal.taie.ir.stmt.Invoke;
 import pascal.taie.ir.stmt.Stmt;
 import pascal.taie.language.classes.JMethod;
+import pascal.taie.util.Indexer;
 import pascal.taie.util.ResultHolder;
 
 import javax.annotation.Nullable;
+import java.io.Serializable;
 import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Stream;
@@ -38,7 +40,8 @@ import java.util.stream.Stream;
  * Intermediate representation for method body of non-abstract methods.
  * Each IR contains the variables and statements defined in a method.
  */
-public interface IR extends Iterable<Stmt>, ResultHolder {
+public interface IR extends Iterable<Stmt>, Indexer<Stmt>,
+        ResultHolder, Serializable {
 
     /**
      * @return the method that defines the content of this IR.
@@ -65,6 +68,17 @@ public interface IR extends Iterable<Stmt>, ResultHolder {
     Var getParam(int i);
 
     /**
+     * @return {@code true} if {@code var} is a parameter of this IR.
+     */
+    boolean isParam(Var var);
+
+    /**
+     * @return {@code true} if {@code var} is "this" variable or a parameter
+     * of this IR.
+     */
+    boolean isThisOrParam(Var var);
+
+    /**
      * @return all returned variables. If the method return type is void,
      * then returns empty list.
      */
@@ -79,6 +93,11 @@ public interface IR extends Iterable<Stmt>, ResultHolder {
      * @return the variables in this IR.
      */
     List<Var> getVars();
+
+    /**
+     * @return an indexer for the variables in this IR.
+     */
+    Indexer<Var> getVarIndexer();
 
     /**
      * @return the i-th {@link Stmt} in this IR. The indexes start from 0.

@@ -33,90 +33,114 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import pascal.taie.analysis.pta.plugin.util.InvokeUtils;
 import pascal.taie.config.ConfigException;
 import pascal.taie.language.classes.ClassHierarchy;
+import pascal.taie.language.classes.JClass;
+import pascal.taie.language.classes.JField;
 import pascal.taie.language.classes.JMethod;
+import pascal.taie.language.type.ArrayType;
+import pascal.taie.language.type.ClassType;
 import pascal.taie.language.type.Type;
 import pascal.taie.language.type.TypeSystem;
-import pascal.taie.util.collection.Sets;
+import pascal.taie.util.collection.Lists;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Set;
+import java.util.List;
+import java.util.stream.Stream;
+
+import static pascal.taie.analysis.pta.plugin.taint.TransferPoint.ARRAY_SUFFIX;
 
 /**
  * Configuration for taint analysis.
  */
-class TaintConfig {
+record TaintConfig(List<Source> sources,
+                   List<Sink> sinks,
+                   List<TaintTransfer> transfers,
+                   List<ParamSanitizer> paramSanitizers,
+                   boolean callSiteMode) {
 
     private static final Logger logger = LogManager.getLogger(TaintConfig.class);
 
     /**
-     * Set of sources.
+     * An empty taint config.
      */
-    private final Set<Source> sources;
+    private static final TaintConfig EMPTY = new TaintConfig(
+            List.of(), List.of(), List.of(), List.of(), false);
 
     /**
-     * Set of sinks.
-     */
-    private final Set<Sink> sinks;
-
-    /**
-     * Set of taint transfers;
-     */
-    private final Set<TaintTransfer> transfers;
-
-    private TaintConfig(Set<Source> sources, Set<Sink> sinks,
-                        Set<TaintTransfer> transfers) {
-        this.sources = sources;
-        this.sinks = sinks;
-        this.transfers = transfers;
-    }
-
-    /**
-     * Reads a taint analysis configuration from file
+     * Loads a taint analysis configuration from given path.
+     * If the path is a file, then loads config from the file;
+     * if the path is a directory, then loads all YAML files in the directory
+     * and merge them as the result.
      *
-     * @param path       the path to the config file
+     * @param path       the path
      * @param hierarchy  the class hierarchy
      * @param typeSystem the type manager
-     * @return the TaintConfig object
-     * @throws ConfigException if failed to load the config file
+     * @return the resulting {@link TaintConfig}
+     * @throws ConfigException if failed to load the config
      */
-    static TaintConfig readConfig(
+    static TaintConfig loadConfig(
             String path, ClassHierarchy hierarchy, TypeSystem typeSystem) {
-        File file = new File(path);
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
         SimpleModule module = new SimpleModule();
         module.addDeserializer(TaintConfig.class,
                 new Deserializer(hierarchy, typeSystem));
         mapper.registerModule(module);
-        try {
-            return mapper.readValue(file, TaintConfig.class);
-        } catch (IOException e) {
-            throw new ConfigException("Failed to read taint analysis config file " + file, e);
+        File file = new File(path);
+        logger.info("Loading taint config from {}", file.getAbsolutePath());
+        if (file.isFile()) {
+            return loadSingle(mapper, file);
+        } else if (file.isDirectory()) {
+            // if file is a directory, then load all YAML files
+            // in the directory and merge them as the result
+            TaintConfig[] result = new TaintConfig[]{ EMPTY };
+            try (Stream<Path> paths = Files.walk(file.toPath())) {
+                paths.filter(TaintConfig::isYAML)
+                        .map(p -> loadSingle(mapper, p.toFile()))
+                        .forEach(tc -> result[0] = result[0].mergeWith(tc));
+                return result[0];
+            } catch (IOException e) {
+                throw new ConfigException("Failed to load taint config from " + file, e);
+            }
+        } else {
+            throw new ConfigException(path + " is neither a file nor a directory");
         }
     }
 
     /**
-     * @return sources in the configuration.
+     * Loads taint config from a single file.
      */
-    Set<Source> getSources() {
-        return sources;
+    private static TaintConfig loadSingle(ObjectMapper mapper, File file) {
+        try {
+            return mapper.readValue(file, TaintConfig.class);
+        } catch (IOException e) {
+            throw new ConfigException("Failed to load taint config from " + file, e);
+        }
+    }
+
+    private static boolean isYAML(Path path) {
+        String pathStr = path.toString();
+        return pathStr.endsWith(".yml") || pathStr.endsWith(".yaml");
     }
 
     /**
-     * @return sinks in the configuration.
+     * Merges this taint config with other taint config.
+     * @return a new merged taint config.
      */
-    Set<Sink> getSinks() {
-        return sinks;
-    }
-
-    /**
-     * @return taint transfers in the configuration.
-     */
-    Set<TaintTransfer> getTransfers() {
-        return transfers;
+    TaintConfig mergeWith(TaintConfig other) {
+        return new TaintConfig(
+                Lists.concatDistinct(sources, other.sources),
+                Lists.concatDistinct(sinks, other.sinks),
+                Lists.concatDistinct(transfers, other.transfers),
+                Lists.concatDistinct(paramSanitizers, other.paramSanitizers),
+                callSiteMode || other.callSiteMode);
     }
 
     @Override
@@ -136,6 +160,11 @@ class TaintConfig {
             sb.append("\ntransfers:\n");
             transfers.forEach(transfer ->
                     sb.append("  ").append(transfer).append("\n"));
+        }
+        if (!paramSanitizers.isEmpty()) {
+            sb.append("\nsanitizers:\n");
+            paramSanitizers.forEach(sanitizer ->
+                    sb.append("  ").append(sanitizer).append("\n"));
         }
         return sb.toString();
     }
@@ -159,100 +188,255 @@ class TaintConfig {
                 throws IOException {
             ObjectCodec oc = p.getCodec();
             JsonNode node = oc.readTree(p);
-            Set<Source> sources = deserializeSources(node.get("sources"));
-            Set<Sink> sinks = deserializeSinks(node.get("sinks"));
-            Set<TaintTransfer> transfers = deserializeTransfers(node.get("transfers"));
-            return new TaintConfig(sources, sinks, transfers);
+            List<Source> sources = deserializeSources(node.get("sources"));
+            List<Sink> sinks = deserializeSinks(node.get("sinks"));
+            List<TaintTransfer> transfers = deserializeTransfers(node.get("transfers"));
+            List<ParamSanitizer> sanitizers = deserializeSanitizers(node.get("sanitizers"));
+            JsonNode callSiteNode = node.get("call-site-mode");
+            boolean callSiteMode = (callSiteNode != null && callSiteNode.asBoolean());
+            return new TaintConfig(
+                    sources, sinks, transfers, sanitizers, callSiteMode);
         }
 
         /**
          * Deserializes a {@link JsonNode} (assume it is an {@link ArrayNode})
-         * to a set of {@link Source}.
+         * to a list of {@link Source}.
          *
          * @param node the node to be deserialized
-         * @return set of deserialized {@link Source}
+         * @return list of deserialized {@link Source}
          */
-        private Set<Source> deserializeSources(JsonNode node) {
+        private List<Source> deserializeSources(JsonNode node) {
             if (node instanceof ArrayNode arrayNode) {
-                Set<Source> sources = Sets.newSet(arrayNode.size());
+                List<Source> sources = new ArrayList<>(arrayNode.size());
                 for (JsonNode elem : arrayNode) {
-                    String methodSig = elem.get("method").asText();
-                    JMethod method = hierarchy.getMethod(methodSig);
-                    if (method != null) {
-                        // if the method (given in config file) is absent in
-                        // the class hierarchy, just ignore it.
-                        Type type = typeSystem.getType(
-                                elem.get("type").asText());
-                        sources.add(new Source(method, type));
+                    JsonNode sourceKind = elem.get("kind");
+                    Source source;
+                    if (sourceKind != null) {
+                        source = switch (sourceKind.asText()) {
+                            case "call" -> deserializeCallSource(elem);
+                            case "param" -> deserializeParamSource(elem);
+                            case "field" -> deserializeFieldSource(elem);
+                            default -> {
+                                logger.warn("Unknown source kind \"{}\" in {}",
+                                        sourceKind.asText(), elem.toString());
+                                yield null;
+                            }
+                        };
                     } else {
-                        logger.warn("Cannot find source method '{}'", methodSig);
+                        logger.warn("Ignore {} due to missing source \"kind\"",
+                                elem.toString());
+                        source = null;
+                    }
+                    if (source != null) {
+                        sources.add(source);
                     }
                 }
-                return Collections.unmodifiableSet(sources);
+                return Collections.unmodifiableList(sources);
             } else {
                 // if node is not an instance of ArrayNode, just return an empty set.
-                return Set.of();
+                return List.of();
+            }
+        }
+
+        @Nullable
+        private CallSource deserializeCallSource(JsonNode node) {
+            String methodSig = node.get("method").asText();
+            JMethod method = hierarchy.getMethod(methodSig);
+            if (method != null) {
+                int index = InvokeUtils.toInt(node.get("index").asText());
+                JsonNode typeNode = node.get("type");
+                Type type = (typeNode != null)
+                        ? typeSystem.getType(typeNode.asText())
+                        // type not given, retrieve it from method signature
+                        : getMethodType(method, index);
+                return new CallSource(method, index, type);
+            } else {
+                // if the method (given in config file) is absent in
+                // the class hierarchy, just ignore it.
+                logger.warn("Cannot find source method '{}'", methodSig);
+                return null;
+            }
+        }
+
+        @Nullable
+        private ParamSource deserializeParamSource(JsonNode node) {
+            String methodSig = node.get("method").asText();
+            JMethod method = hierarchy.getMethod(methodSig);
+            if (method != null) {
+                int index = InvokeUtils.toInt(node.get("index").asText());
+                JsonNode typeNode = node.get("type");
+                Type type = (typeNode != null)
+                        ? typeSystem.getType(typeNode.asText())
+                        // type not given, retrieve it from method signature
+                        : getMethodType(method, index);
+                return new ParamSource(method, index, type);
+            } else {
+                // if the method (given in config file) is absent in
+                // the class hierarchy, just ignore it.
+                logger.warn("Cannot find source method '{}'", methodSig);
+                return null;
+            }
+        }
+
+        @Nullable
+        private FieldSource deserializeFieldSource(JsonNode node) {
+            String fieldSig = node.get("field").asText();
+            JField field = hierarchy.getField(fieldSig);
+            if (field != null) {
+                JsonNode typeNode = node.get("type");
+                Type type = (typeNode != null)
+                        ? typeSystem.getType(typeNode.asText())
+                        : field.getType(); // type not given, use field type
+                return new FieldSource(field, type);
+            } else {
+                // if the field (given in config file) is absent in
+                // the class hierarchy, just ignore it.
+                logger.warn("Cannot find source field '{}'", fieldSig);
+                return null;
             }
         }
 
         /**
+         * @return corresponding type of index for the method.
+         */
+        private static Type getMethodType(JMethod method, int index) {
+            return switch (index) {
+                case InvokeUtils.BASE -> method.getDeclaringClass().getType();
+                case InvokeUtils.RESULT -> method.getReturnType();
+                default -> method.getParamType(index);
+            };
+        }
+
+        /**
          * Deserializes a {@link JsonNode} (assume it is an {@link ArrayNode})
-         * to a set of {@link Sink}.
+         * to a list of {@link Sink}.
          *
          * @param node the node to be deserialized
-         * @return set of deserialized {@link Sink}
+         * @return list of deserialized {@link Sink}
          */
-        private Set<Sink> deserializeSinks(JsonNode node) {
+        private List<Sink> deserializeSinks(JsonNode node) {
             if (node instanceof ArrayNode arrayNode) {
-                Set<Sink> sinks = Sets.newSet(arrayNode.size());
+                List<Sink> sinks = new ArrayList<>(arrayNode.size());
                 for (JsonNode elem : arrayNode) {
                     String methodSig = elem.get("method").asText();
                     JMethod method = hierarchy.getMethod(methodSig);
                     if (method != null) {
                         // if the method (given in config file) is absent in
                         // the class hierarchy, just ignore it.
-                        int index = elem.get("index").asInt();
+                        int index = InvokeUtils.toInt(elem.get("index").asText());
                         sinks.add(new Sink(method, index));
                     } else {
                         logger.warn("Cannot find sink method '{}'", methodSig);
                     }
                 }
-                return Collections.unmodifiableSet(sinks);
+                return Collections.unmodifiableList(sinks);
             } else {
                 // if node is not an instance of ArrayNode, just return an empty set.
-                return Set.of();
+                return List.of();
             }
         }
 
         /**
          * Deserializes a {@link JsonNode} (assume it is an {@link ArrayNode})
-         * to a set of {@link TaintTransfer}.
+         * to a list of {@link TaintTransfer}.
          *
          * @param node the node to be deserialized
-         * @return set of deserialized {@link TaintTransfer}
+         * @return list of deserialized {@link TaintTransfer}
          */
-        private Set<TaintTransfer> deserializeTransfers(JsonNode node) {
+        private List<TaintTransfer> deserializeTransfers(JsonNode node) {
             if (node instanceof ArrayNode arrayNode) {
-                Set<TaintTransfer> transfers = Sets.newSet(arrayNode.size());
+                List<TaintTransfer> transfers = new ArrayList<>(arrayNode.size());
                 for (JsonNode elem : arrayNode) {
                     String methodSig = elem.get("method").asText();
                     JMethod method = hierarchy.getMethod(methodSig);
                     if (method != null) {
                         // if the method (given in config file) is absent in
                         // the class hierarchy, just ignore it.
-                        int from = TaintTransfer.toInt(elem.get("from").asText());
-                        int to = TaintTransfer.toInt(elem.get("to").asText());
-                        Type type = typeSystem.getType(
-                                elem.get("type").asText());
+                        TransferPoint from = toTransferPoint(method, elem.get("from").asText());
+                        TransferPoint to = toTransferPoint(method, elem.get("to").asText());
+                        JsonNode typeNode = elem.get("type");
+                        Type type;
+                        if (typeNode != null) {
+                            type = typeSystem.getType(typeNode.asText());
+                        } else {
+                            // type not given, retrieve it from method signature
+                            Type varType = getMethodType(method, to.index());
+                            type = switch (to.kind()) {
+                                case VAR -> varType;
+                                case ARRAY -> ((ArrayType) varType).elementType();
+                                case FIELD -> to.field().getType();
+                            };
+                        }
                         transfers.add(new TaintTransfer(method, from, to, type));
                     } else {
                         logger.warn("Cannot find taint-transfer method '{}'", methodSig);
                     }
                 }
-                return Collections.unmodifiableSet(transfers);
+                return Collections.unmodifiableList(transfers);
             } else {
                 // if node is not an instance of ArrayNode, just return an empty set.
-                return Set.of();
+                return List.of();
+            }
+        }
+
+        private TransferPoint toTransferPoint(JMethod method, String text) {
+            TransferPoint.Kind kind;
+            String indexStr;
+            if (text.endsWith(ARRAY_SUFFIX)) {
+                kind = TransferPoint.Kind.ARRAY;
+                indexStr = text.substring(0, text.length() - ARRAY_SUFFIX.length());
+            } else if (text.contains(".")) {
+                kind = TransferPoint.Kind.FIELD;
+                indexStr = text.substring(0, text.indexOf('.'));
+            } else {
+                kind = TransferPoint.Kind.VAR;
+                indexStr = text;
+            }
+            int index = InvokeUtils.toInt(indexStr);
+            JField field = null;
+            if (kind == TransferPoint.Kind.FIELD) {
+                Type varType = getMethodType(method, index);
+                String fieldName = text.substring(text.indexOf('.') + 1);
+                if (varType instanceof ClassType classType) {
+                    JClass clazz = classType.getJClass();
+                    while (clazz != null) {
+                        field = clazz.getDeclaredField(fieldName);
+                        if (field != null) {
+                            break;
+                        }
+                        clazz = clazz.getSuperClass();
+                    }
+                }
+                assert field != null
+                        : "Cannot find field '" + fieldName + "' in type " + varType;
+            }
+            return new TransferPoint(kind, index, field);
+        }
+
+        /**
+         * Deserializes a {@link JsonNode} (assume it is an {@link ArrayNode})
+         * to a list of {@link Sanitizer}.
+         *
+         * @param node the node to be deserialized
+         * @return list of deserialized {@link Sanitizer}.
+         */
+        private List<ParamSanitizer> deserializeSanitizers(JsonNode node) {
+            if (node instanceof ArrayNode arrayNode) {
+                List<ParamSanitizer> sanitizers = new ArrayList<>(arrayNode.size());
+                for (JsonNode elem : arrayNode) {
+                    String methodSig = elem.get("method").asText();
+                    JMethod method = hierarchy.getMethod(methodSig);
+                    if (method != null) {
+                        int index = InvokeUtils.toInt(elem.get("index").asText());
+                        sanitizers.add(new ParamSanitizer(method, index));
+                    } else {
+                        logger.warn("Cannot find sanitizer method '{}'", methodSig);
+                    }
+                }
+                return Collections.unmodifiableList(sanitizers);
+            } else {
+                // if node is not an instance of ArrayNode, just return an empty set.
+                return List.of();
             }
         }
     }

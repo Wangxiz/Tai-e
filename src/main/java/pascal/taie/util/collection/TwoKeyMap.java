@@ -23,9 +23,11 @@
 package pascal.taie.util.collection;
 
 import pascal.taie.util.TriConsumer;
+import pascal.taie.util.TriFunction;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.io.Serializable;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
@@ -130,12 +132,19 @@ public interface TwoKeyMap<K1, K2, V> {
     boolean removeAll(K1 key1);
 
     /**
+     * Replaces each entry's value with the result of invoking the given function
+     * on that entry until all entries have been processed or the function throws
+     * an exception.
+     */
+    void replaceALl(TriFunction<? super K1, ? super K2, ? super V, ? extends V> function);
+
+    /**
      * @return an unmodifiable view of all <i>distinct</i> two-key pairs
      * contained in this two-key map. Note that the result contains
      * a two-key pair if and only if this map maps that key pair to
      * a non-{@code null} value.
      */
-    Set<KeyPair<K1, K2>> keyPairSet();
+    Set<Pair<K1, K2>> twoKeySet();
 
     /**
      * @return an unmodifiable view of first keys of all mappings contained
@@ -231,23 +240,11 @@ public interface TwoKeyMap<K1, K2, V> {
      * A map entry (key1-key2-value triple). The {@link #entrySet()} method
      * returns a collection-view of the map, whose elements are of this class.
      * The only way to obtain a reference to a map entry is from the iterator
-     * of this collection-view. These {@link Entry>} objects are valid only
+     * of this collection-view. These {@link Entry} objects are valid only
      * for the duration of the iteration; more formally, the behavior of a
      * map entry is undefined if the backing map has been modified after
      * the entry was returned by the iterator.
      */
-    record Entry<K1, K2, V>(K1 key1, K2 key2, V value) {
-    }
-
-    /**
-     * A key pair (key1-key2 pair). The {@link #keyPairSet()} method returns
-     * a collection-view of the map, whose elements are of this class.
-     * The only way to obtain a reference to a map entry is from the iterator
-     * of this collection-view. These {@link KeyPair} objects are valid only
-     * for the duration of the iteration; more formally, the behavior of a
-     * key pair is undefined if the backing map has been modified after
-     * the pair was returned by the iterator.
-     */
-    record KeyPair<K1, K2>(K1 key1, K2 key2) {
+    record Entry<K1, K2, V>(K1 key1, K2 key2, V value) implements Serializable {
     }
 }

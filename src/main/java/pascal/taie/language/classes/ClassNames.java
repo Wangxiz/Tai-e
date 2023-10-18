@@ -31,7 +31,7 @@ public final class ClassNames {
     // Names of special important classes
     public static final String OBJECT = "java.lang.Object";
 
-    public static final String SERIALIZABLE = "java.lang.Serializable";
+    public static final String SERIALIZABLE = "java.io.Serializable";
 
     public static final String CLONEABLE = "java.lang.Cloneable";
 
@@ -144,6 +144,8 @@ public final class ClassNames {
     public static final String UNSATISFIED_LINK_ERROR = "java.lang.UnsatisfiedLinkError";
 
     public static final String VERIFY_ERROR = "java.lang.VerifyError";
+
+    public static final String ANNOTATION = "java.lang.annotation.Annotation";
 
     // Suppresses default constructor, ensuring non-instantiability.
     private ClassNames() {

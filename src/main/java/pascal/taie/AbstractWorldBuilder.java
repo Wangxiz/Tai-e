@@ -22,17 +22,22 @@
 
 package pascal.taie;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import pascal.taie.config.Options;
 import pascal.taie.language.classes.ClassHierarchy;
 import pascal.taie.language.natives.DefaultNativeModel;
 import pascal.taie.language.natives.EmptyNativeModel;
 import pascal.taie.language.natives.NativeModel;
 import pascal.taie.language.type.TypeSystem;
+import pascal.taie.util.ClassNameExtractor;
+import pascal.taie.util.collection.Streams;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -41,6 +46,8 @@ import java.util.stream.Stream;
  * Common functionality for {@link WorldBuilder} implementations.
  */
 public abstract class AbstractWorldBuilder implements WorldBuilder {
+
+    private static final Logger logger = LogManager.getLogger(AbstractWorldBuilder.class);
 
     protected static final String JREs = "java-benchmarks/JREs";
 
@@ -62,7 +69,7 @@ public abstract class AbstractWorldBuilder implements WorldBuilder {
 
     protected static String getClassPath(Options options) {
         if (options.isPrependJVM()) {
-            return options.getClassPath();
+            return String.join(File.pathSeparator, options.getClassPath());
         } else { // when prependJVM is not set, we manually specify JRE jars
             // check existence of JREs
             File jreDir = new File(JREs);
@@ -70,15 +77,17 @@ public abstract class AbstractWorldBuilder implements WorldBuilder {
                 throw new RuntimeException("""
                         Failed to locate Java library.
                         Please clone submodule 'java-benchmarks' by command:
-                        git submodule update --init --recursive
-                        and put it in Tai-e's working directory.""");
+                        'git submodule update --init --recursive' (if you are running Tai-e)
+                        or 'git clone https://github.com/pascal-lab/java-benchmarks' (if you are using Tai-e as a dependency),
+                        then put it in Tai-e's working directory.""");
             }
             String jrePath = String.format("%s/jre1.%d",
                     JREs, options.getJavaVersion());
             try (Stream<Path> paths = Files.walk(Path.of(jrePath))) {
-                return Stream.concat(
+                return Streams.concat(
                                 paths.map(Path::toString).filter(p -> p.endsWith(".jar")),
-                                Stream.of(options.getClassPath()))
+                                options.getAppClassPath().stream(),
+                                options.getClassPath().stream())
                         .collect(Collectors.joining(File.pathSeparator));
             } catch (IOException e) {
                 throw new RuntimeException("Analysis on Java " +
@@ -88,9 +97,36 @@ public abstract class AbstractWorldBuilder implements WorldBuilder {
     }
 
     protected static NativeModel getNativeModel(
-            TypeSystem typeSystem, ClassHierarchy hierarchy) {
-        return World.get().getOptions().enableNativeModel() ?
-                new DefaultNativeModel(typeSystem, hierarchy) :
+            TypeSystem typeSystem, ClassHierarchy hierarchy, Options options) {
+        return options.enableNativeModel() ?
+                new DefaultNativeModel(typeSystem, hierarchy, options.getJavaVersion()) :
                 new EmptyNativeModel();
+    }
+
+    /**
+     * Obtains all input classes specified in {@code options}.
+     */
+    protected static List<String> getInputClasses(Options options) {
+        List<String> classes = new ArrayList<>();
+        // process --input-classes
+        options.getInputClasses().forEach(value -> {
+            if (value.endsWith(".txt")) {
+                // value is a path to a file that contains class names
+                try (Stream<String> lines = Files.lines(Path.of(value))) {
+                    lines.forEach(classes::add);
+                } catch (IOException e) {
+                    logger.warn("Failed to read input class file {} due to {}",
+                            value, e);
+                }
+            } else {
+                // value is a class name
+                classes.add(value);
+            }
+        });
+        // process --app-class-path
+        for (String path : options.getAppClassPath()) {
+            classes.addAll(ClassNameExtractor.extract(path));
+        }
+        return classes;
     }
 }

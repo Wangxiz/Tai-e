@@ -25,102 +25,53 @@ package pascal.taie.analysis.bugfinder;
 import pascal.taie.language.classes.JClass;
 import pascal.taie.language.classes.JMethod;
 
-import javax.annotation.Nonnull;
 import java.util.Objects;
 
-//TODO: refactor it with more precise context information.
-public class BugInstance {
+// TODO: refactor it with more precise context information.
+public class BugInstance implements Comparable<BugInstance> {
 
-    private final String type;
+    private final BugType type;
 
-    private Severity severity;
+    private final Severity severity;
 
-    private JClass jClass;
+    private final JClass jClass;
 
-    private JMethod jMethod;
+    private final JMethod jMethod;
 
+    private int sourceLineStart = -1;
 
-    private int sourceLineStart = -1, sourceLineEnd = -2;
-//    private final ArrayList<BugAnnotation> annotationList;
+    private int sourceLineEnd = -1;
 
-    public BugInstance(@Nonnull String type, Severity severity) {
-        this.type = type.intern();
+    public BugInstance(BugType type, Severity severity, JClass jClass) {
+        this.type = type;
         this.severity = severity;
+        this.jClass = jClass;
+        this.jMethod = null;
+    }
+
+    public BugInstance(BugType type, Severity severity, JMethod jMethod) {
+        this.type = type;
+        this.severity = severity;
+        this.jClass = jMethod.getDeclaringClass();
+        this.jMethod = jMethod;
+    }
+
+    public BugType getType() {
+        return type;
     }
 
     public Severity getSeverity() {
         return severity;
     }
 
-    public String getType() {
-        return type;
-    }
-
-    private String getString(Object o) {
-        return o == null ? "empty" : o.toString();
-    }
-
-    @Override
-    public String toString() {
-        String sourcelineRange = "empty";
-        if (sourceLineStart >= 0) {
-            sourcelineRange = sourceLineStart == sourceLineEnd ? String.valueOf(sourceLineStart) :
-                    sourceLineStart + "---" + sourceLineEnd;
-        }
-        return String.format("Class: %s, Method: %s, LineNumber: %s. \nbug type: %s, severity: %s",
-                getString(jClass), getString(jMethod), sourcelineRange, type, severity
-        );
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (o == this) return true;
-        if (!(o instanceof BugInstance bugInstance)) return false;
-
-        return type.equals(bugInstance.type) && jClass == bugInstance.jClass
-                && jMethod == bugInstance.jMethod && sourceLineStart == bugInstance.sourceLineStart
-                && sourceLineEnd == bugInstance.sourceLineEnd;
-    }
-
-    @Override
-    public int hashCode() {
-        int result = Objects.hashCode(type);
-        result = 31 * result + Objects.hashCode(jClass);
-        result = 31 * result + Objects.hashCode(jMethod);
-        result = 31 * result + sourceLineStart;
-        result = 31 * result + sourceLineEnd;
-        return result;
-    }
-
-    public static BugInstance newBugInstance(String type, Severity severity, JMethod method, int lineNum) {
-        return new BugInstance(type, severity).setClassAndMethod(method).setSourceLine(lineNum);
-    }
-
-    public BugInstance setClassAndMethod(JMethod method) {
-        setMethod(method);
-        setClass(method.getDeclaringClass());
-        return this;
-    }
-
-    public BugInstance setClass(JClass clazz) {
-        jClass = clazz;
-        return this;
-    }
-
-    public BugInstance setMethod(JMethod method) {
-        jMethod = method;
-        return this;
-    }
-
-    public BugInstance setSourceLine(int num) {
-        sourceLineStart = sourceLineEnd = num;
-        return this;
-    }
-
     public BugInstance setSourceLine(int start, int end) {
         sourceLineStart = start;
         sourceLineEnd = end;
         return this;
+    }
+
+    public BugInstance setSourceLine(int num) {
+        return setSourceLine(num, num);
     }
 
     public int getSourceLineStart() {
@@ -131,4 +82,44 @@ public class BugInstance {
         return sourceLineEnd;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof BugInstance bugInstance)) {
+            return false;
+        }
+        return type.equals(bugInstance.type)
+                && Objects.equals(jClass, bugInstance.jClass)
+                && Objects.equals(jMethod, bugInstance.jMethod)
+                && sourceLineStart == bugInstance.sourceLineStart
+                && sourceLineEnd == bugInstance.sourceLineEnd;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(type, jClass, jMethod, sourceLineStart, sourceLineEnd);
+    }
+
+    @Override
+    public String toString() {
+        String sourceLineRange = "null";
+        if (sourceLineStart >= 0) {
+            sourceLineRange = sourceLineStart == sourceLineEnd
+                    ? String.valueOf(sourceLineStart)
+                    : sourceLineStart + "---" + sourceLineEnd;
+        }
+        return String.format("Class: %s, Method: %s, LineNumber: %s, BugType: %s, Severity: %s",
+                jClass, jMethod, sourceLineRange, type, severity);
+    }
+
+    @Override
+    public int compareTo(BugInstance o) {
+        if (jClass.equals(o.jClass)) {
+            return Integer.compare(sourceLineStart, o.sourceLineStart);
+        } else {
+            return jClass.toString().compareTo(o.jClass.toString());
+        }
+    }
 }

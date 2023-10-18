@@ -24,8 +24,10 @@ package pascal.taie.ir.exp;
 
 import pascal.taie.ir.proginfo.MethodRef;
 import pascal.taie.language.type.Type;
+import pascal.taie.util.collection.ArraySet;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -70,7 +72,7 @@ public abstract class InvokeExp implements RValue {
     /**
      * @return the i-th argument of the invocation.
      * @throws IndexOutOfBoundsException if the index is out of range
-     *                                   (index < 0 || index >= getArgCount())
+     *                                   (index &lt; 0 || index &ge; getArgCount())
      */
     public Var getArg(int i) {
         return args.get(i);
@@ -92,7 +94,7 @@ public abstract class InvokeExp implements RValue {
     }
 
     @Override
-    public List<RValue> getUses() {
-        return List.copyOf(args);
+    public Set<RValue> getUses() {
+        return new ArraySet<>(args);
     }
 }

@@ -65,10 +65,12 @@ public class MapEntry<K, V> implements Entry<K, V>, Serializable {
 
     @Override
     public boolean equals(Object obj) {
-        if (obj == this)
+        if (obj == this) {
             return true;
-        if (!(obj instanceof Entry<?, ?> e))
+        }
+        if (!(obj instanceof Entry<?, ?> e)) {
             return false;
+        }
         return Objects.equals(key, e.getKey()) &&
                 Objects.equals(value, e.getValue());
     }

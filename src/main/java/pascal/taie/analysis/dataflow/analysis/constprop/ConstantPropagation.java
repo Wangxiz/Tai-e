@@ -25,7 +25,7 @@ package pascal.taie.analysis.dataflow.analysis.constprop;
 import pascal.taie.analysis.dataflow.analysis.AbstractDataflowAnalysis;
 import pascal.taie.analysis.dataflow.analysis.AnalysisDriver;
 import pascal.taie.analysis.graph.cfg.CFG;
-import pascal.taie.analysis.graph.cfg.Edge;
+import pascal.taie.analysis.graph.cfg.CFGEdge;
 import pascal.taie.config.AnalysisConfig;
 import pascal.taie.ir.IR;
 import pascal.taie.ir.exp.ConditionExp;
@@ -42,7 +42,7 @@ import pascal.taie.ir.stmt.SwitchStmt;
  */
 public class ConstantPropagation extends AnalysisDriver<Stmt, CPFact> {
 
-    public static final String ID = "constprop";
+    public static final String ID = "const-prop";
 
     public ConstantPropagation(AnalysisConfig config) {
         super(config);
@@ -135,23 +135,23 @@ public class ConstantPropagation extends AnalysisDriver<Stmt, CPFact> {
         }
 
         @Override
-        public boolean needTransferEdge(Edge<Stmt> edge) {
+        public boolean needTransferEdge(CFGEdge<Stmt> edge) {
             if (edgeRefine) {
-                return edge.getSource() instanceof If ||
-                        edge.getKind() == Edge.Kind.SWITCH_CASE;
+                return edge.source() instanceof If ||
+                        edge.getKind() == CFGEdge.Kind.SWITCH_CASE;
             } else {
                 return false;
             }
         }
 
         @Override
-        public CPFact transferEdge(Edge<Stmt> edge, CPFact nodeFact) {
-            Edge.Kind kind = edge.getKind();
-            if (edge.getSource() instanceof If) {
-                ConditionExp cond = ((If) edge.getSource()).getCondition();
+        public CPFact transferEdge(CFGEdge<Stmt> edge, CPFact nodeFact) {
+            CFGEdge.Kind kind = edge.getKind();
+            if (edge.source() instanceof If) {
+                ConditionExp cond = ((If) edge.source()).getCondition();
                 ConditionExp.Op op = cond.getOperator();
-                if ((kind == Edge.Kind.IF_TRUE && op == ConditionExp.Op.EQ) ||
-                        (kind == Edge.Kind.IF_FALSE && op == ConditionExp.Op.NE)) {
+                if ((kind == CFGEdge.Kind.IF_TRUE && op == ConditionExp.Op.EQ) ||
+                        (kind == CFGEdge.Kind.IF_FALSE && op == ConditionExp.Op.NE)) {
                     // if (v1 == v2) {
                     //   ... <- v1 must equal to v2 at this branch
                     // if (v1 != v2) { ... } else {
@@ -166,10 +166,10 @@ public class ConstantPropagation extends AnalysisDriver<Stmt, CPFact> {
                     result.update(v2, joined);
                     return result;
                 }
-            } else if (kind == Edge.Kind.SWITCH_CASE) {
+            } else if (kind == CFGEdge.Kind.SWITCH_CASE) {
                 // switch (x) {
                 //   case 1: ... <- x must be 1 at this branch
-                Var var = ((SwitchStmt) edge.getSource()).getVar();
+                Var var = ((SwitchStmt) edge.source()).getVar();
                 Value val = nodeFact.get(var);
                 int caseValue = edge.getCaseValue();
                 CPFact result = nodeFact.copy();

@@ -22,14 +22,14 @@
 
 package pascal.taie.analysis.dataflow.analysis;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import pascal.taie.analysis.Tests;
 
 public class ReachDefTest {
 
     @Test
-    public void test() {
-        Tests.test("ReachDef", "src/test/resources/dataflow/",
+    void test() {
+        Tests.testInput("ReachDef", "src/test/resources/dataflow/",
                 ReachingDefinition.ID);
     }
 }

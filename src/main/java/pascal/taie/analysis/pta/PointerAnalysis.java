@@ -35,16 +35,19 @@ import pascal.taie.analysis.pta.core.solver.Solver;
 import pascal.taie.analysis.pta.plugin.AnalysisTimer;
 import pascal.taie.analysis.pta.plugin.ClassInitializer;
 import pascal.taie.analysis.pta.plugin.CompositePlugin;
+import pascal.taie.analysis.pta.plugin.EntryPointHandler;
 import pascal.taie.analysis.pta.plugin.Plugin;
 import pascal.taie.analysis.pta.plugin.ReferenceHandler;
 import pascal.taie.analysis.pta.plugin.ResultProcessor;
 import pascal.taie.analysis.pta.plugin.ThreadHandler;
 import pascal.taie.analysis.pta.plugin.exception.ExceptionAnalysis;
 import pascal.taie.analysis.pta.plugin.invokedynamic.InvokeDynamicAnalysis;
+import pascal.taie.analysis.pta.plugin.invokedynamic.Java9StringConcatHandler;
 import pascal.taie.analysis.pta.plugin.invokedynamic.LambdaAnalysis;
 import pascal.taie.analysis.pta.plugin.natives.NativeModeller;
 import pascal.taie.analysis.pta.plugin.reflection.ReflectionAnalysis;
 import pascal.taie.analysis.pta.plugin.taint.TaintAnalysis;
+import pascal.taie.analysis.pta.toolkit.CollectionMethods;
 import pascal.taie.analysis.pta.toolkit.mahjong.Mahjong;
 import pascal.taie.analysis.pta.toolkit.scaler.Scaler;
 import pascal.taie.analysis.pta.toolkit.zipper.Zipper;
@@ -74,23 +77,28 @@ public class PointerAnalysis extends ProgramAnalysis<PointerAnalysisResult> {
         String advanced = options.getString("advanced");
         String cs = options.getString("cs");
         if (advanced != null) {
-            // run context-insensitive analysis as pre-analysis
-            PointerAnalysisResult preResult = runAnalysis(heapModel,
-                    ContextSelectorFactory.makeCISelector());
-            if (advanced.startsWith("scaler")) {
-                selector = Timer.runAndCount(() -> ContextSelectorFactory
-                                .makeGuidedSelector(Scaler.run(preResult, advanced)),
-                        "Scaler", Level.INFO);
-            } else if (advanced.startsWith("zipper")) {
-                selector = Timer.runAndCount(() -> ContextSelectorFactory
-                                .makeSelectiveSelector(cs, Zipper.run(preResult, advanced)),
-                        "Zipper", Level.INFO);
-            } else if (advanced.equals("mahjong")) {
-                heapModel = Timer.runAndCount(() -> Mahjong.run(preResult, options),
-                        "Mahjong", Level.INFO);
+            if (advanced.equals("collection")) {
+                selector = ContextSelectorFactory.makeSelectiveSelector(cs,
+                        new CollectionMethods(World.get().getClassHierarchy()).get());
             } else {
-                throw new IllegalArgumentException(
-                        "Illegal advanced analysis argument: " + advanced);
+                // run context-insensitive analysis as pre-analysis
+                PointerAnalysisResult preResult = runAnalysis(heapModel,
+                        ContextSelectorFactory.makeCISelector());
+                if (advanced.startsWith("scaler")) {
+                    selector = Timer.runAndCount(() -> ContextSelectorFactory
+                                    .makeGuidedSelector(Scaler.run(preResult, advanced)),
+                            "Scaler", Level.INFO);
+                } else if (advanced.startsWith("zipper")) {
+                    selector = Timer.runAndCount(() -> ContextSelectorFactory
+                                    .makeSelectiveSelector(cs, Zipper.run(preResult, advanced)),
+                            "Zipper", Level.INFO);
+                } else if (advanced.equals("mahjong")) {
+                    heapModel = Timer.runAndCount(() -> Mahjong.run(preResult, options),
+                            "Mahjong", Level.INFO);
+                } else {
+                    throw new IllegalArgumentException(
+                            "Illegal advanced analysis argument: " + advanced);
+                }
             }
         }
         if (selector == null) {
@@ -118,18 +126,26 @@ public class PointerAnalysis extends ProgramAnalysis<PointerAnalysisResult> {
         // To record elapsed time precisely, AnalysisTimer should be added at first.
         plugin.addPlugin(
                 new AnalysisTimer(),
+                new EntryPointHandler(),
                 new ClassInitializer(),
                 new ThreadHandler(),
                 new NativeModeller(),
-                new ExceptionAnalysis(),
-                new ReflectionAnalysis()
+                new ExceptionAnalysis()
         );
-        if (World.get().getOptions().getJavaVersion() < 9) {
+        int javaVersion = World.get().getOptions().getJavaVersion();
+        if (javaVersion < 9) {
             // current reference handler doesn't support Java 9+
             plugin.addPlugin(new ReferenceHandler());
         }
-        if (World.get().getOptions().getJavaVersion() >= 8) {
+        if (javaVersion >= 8) {
             plugin.addPlugin(new LambdaAnalysis());
+        }
+        if (javaVersion >= 9) {
+            plugin.addPlugin(new Java9StringConcatHandler());
+        }
+        if (options.getString("reflection-inference") != null ||
+                options.getString("reflection-log") != null) {
+            plugin.addPlugin(new ReflectionAnalysis());
         }
         if (options.getBoolean("handle-invokedynamic") &&
                 InvokeDynamicAnalysis.useMethodHandle()) {

@@ -22,7 +22,8 @@
 
 package pascal.taie.analysis.pta;
 
-import org.junit.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import pascal.taie.analysis.Tests;
 
 /**
@@ -32,99 +33,34 @@ public class BasicTest {
 
     static final String DIR = "basic";
 
-    // Tests for handling basic pointer analysis statements
-    @Test
-    public void testNew() {
-        Tests.testPTA(DIR, "New");
+    /**
+     * Tests for handling basic pointer analysis statements
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "New",
+            "Assign",
+            "StoreLoad",
+            "Call",
+            "Assign2",
+            "InstanceField",
+            "InstanceField2",
+            "CallParamRet",
+            "CallField",
+            "StaticCall",
+            "MergeParam",
+            "LinkedQueue",
+            "RedBlackBST",
+            "MultiReturn",
+            "Dispatch",
+            "Dispatch2",
+            "Interface",
+            "Recursion",
+            "Cycle",
+            "ComplexAssign",
+    })
+    void test(String mainClass) {
+        Tests.testPTA(DIR, mainClass);
     }
 
-    @Test
-    public void testAssign() {
-        Tests.testPTA(DIR, "Assign");
-    }
-
-    @Test
-    public void testStoreLoad() {
-        Tests.testPTA(DIR, "StoreLoad");
-    }
-
-    @Test
-    public void testCall() {
-        Tests.testPTA(DIR, "Call");
-    }
-
-    @Test
-    public void testAssign2() {
-        Tests.testPTA(DIR, "Assign2");
-    }
-
-    @Test
-    public void testInstanceField() {
-        Tests.testPTA(DIR, "InstanceField");
-    }
-
-    @Test
-    public void testInstanceField2() {
-        Tests.testPTA(DIR, "InstanceField2");
-    }
-
-    @Test
-    public void testCallParamRet() {
-        Tests.testPTA(DIR, "CallParamRet");
-    }
-
-    @Test
-    public void testCallField() {
-        Tests.testPTA(DIR, "CallField");
-    }
-
-    @Test
-    public void testStaticCall() {
-        Tests.testPTA(DIR, "StaticCall");
-    }
-
-    @Test
-    public void testMergeParam() {
-        Tests.testPTA(DIR, "MergeParam");
-    }
-
-    @Test
-    public void testLinkedQueue() {
-        Tests.testPTA(DIR, "LinkedQueue");
-    }
-
-    @Test
-    public void testRedBlackBST() {
-        Tests.testPTA(DIR, "RedBlackBST");
-    }
-
-    @Test
-    public void testMultiReturn() {
-        Tests.testPTA(DIR, "MultiReturn");
-    }
-
-    @Test
-    public void testDispatch() {
-        Tests.testPTA(DIR, "Dispatch");
-    }
-
-    @Test
-    public void testInterface() {
-        Tests.testPTA(DIR, "Interface");
-    }
-
-    @Test
-    public void testRecursion() {
-        Tests.testPTA(DIR, "Recursion");
-    }
-
-    @Test
-    public void testCycle() {
-        Tests.testPTA(DIR, "Cycle");
-    }
-
-    @Test
-    public void testComplexAssign() {
-        Tests.testPTA(DIR, "ComplexAssign");
-    }
 }

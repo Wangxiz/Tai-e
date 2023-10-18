@@ -30,7 +30,6 @@ import pascal.taie.language.annotation.AnnotationHolder;
 import pascal.taie.language.type.ArrayType;
 import pascal.taie.language.type.ClassType;
 import pascal.taie.language.type.Type;
-import pascal.taie.util.AnalysisException;
 import pascal.taie.util.collection.HybridBitSet;
 import pascal.taie.util.collection.Maps;
 import pascal.taie.util.collection.MultiMap;
@@ -210,7 +209,8 @@ public class ClassHierarchyImpl implements ClassHierarchy {
         JClass jclass = getClass(className);
         if (jclass != null) {
             String fieldName = StringReps.getFieldNameOf(fieldSig);
-            return jclass.getDeclaredField(fieldName);
+            String typeName = StringReps.getFieldTypeOf(fieldSig);
+            return jclass.getDeclaredField(fieldName, typeName);
         }
         return null;
     }
@@ -273,20 +273,20 @@ public class ClassHierarchyImpl implements ClassHierarchy {
         JField field;
         // 0. First, check and handle phantom fields
         if (jclass.isPhantom()) {
-            field = jclass.getPhantomField(name);
+            field = jclass.getPhantomField(name, type);
             if (field == null) {
                 field = new JField(jclass, name, Set.of(),
-                        type, AnnotationHolder.emptyHolder());
-                jclass.addPhantomField(name, field);
+                        type, null, AnnotationHolder.emptyHolder());
+                jclass.addPhantomField(name, type, field);
             }
             return field;
         }
         // JVM Spec. (11 Ed.), 5.4.3.2 Field Resolution
-        // 1. If C declares a field with the name and descriptor specified
+        // 1. If C declares a field with the name and descriptor (type) specified
         // by the field reference, field lookup succeeds. The declared field
         // is the result of the field lookup.
-        field = jclass.getDeclaredField(name);
-        if (field != null && field.getType().equals(type)) {
+        field = jclass.getDeclaredField(name, type);
+        if (field != null) {
             return field;
         }
         // 2. Otherwise, field lookup is applied recursively to the
@@ -304,9 +304,7 @@ public class ClassHierarchyImpl implements ClassHierarchy {
         }
         // 5. Otherwise, field lookup fails.
         return null;
-        // TODO:
-        //  1. check accessibility
-        //  2. handle erroneous cases (e.g., multiple fields with same name)
+        // TODO: check accessibility
     }
 
     @Override
@@ -318,7 +316,8 @@ public class ClassHierarchyImpl implements ClassHierarchy {
         } else if (receiverType instanceof ArrayType) {
             cls = getJREClass(ClassNames.OBJECT);
         } else {
-            throw new AnalysisException(receiverType + " cannot be dispatched");
+            logger.warn("{} cannot be dispatched", receiverType);
+            return null;
         }
         return dispatch(cls, methodRef);
     }
@@ -326,6 +325,11 @@ public class ClassHierarchyImpl implements ClassHierarchy {
     @Override
     @Nullable
     public JMethod dispatch(JClass receiverClass, MethodRef methodRef) {
+        // check the subclass relation between the receiver class and
+        // the class of method reference to avoid the unexpected method found
+        if (!isSubclass(methodRef.getDeclaringClass(), receiverClass)) {
+            return null;
+        }
         Subsignature subsignature = methodRef.getSubsignature();
         JMethod target = dispatchTable.get(receiverClass, subsignature);
         if (target == null) {
@@ -394,12 +398,7 @@ public class ClassHierarchyImpl implements ClassHierarchy {
             return true;
         } else if (superclass == getObjectClass()) {
             return true;
-        } /*else if (subclass.isInterface()) {
-            return superclass.isInterface() &&
-                    isSubinterface(superclass, subclass);
         } else {
-            return isSubclass0(superclass, subclass);
-        }*/ else {
             return getAllSubclassesOf(superclass).contains(subclass);
         }
     }

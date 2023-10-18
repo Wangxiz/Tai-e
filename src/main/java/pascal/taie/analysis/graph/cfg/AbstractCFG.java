@@ -43,9 +43,9 @@ abstract class AbstractCFG<N> implements CFG<N> {
 
     protected final Set<N> nodes;
 
-    private final MultiMap<N, Edge<N>> inEdges;
+    private final MultiMap<N, CFGEdge<N>> inEdges;
 
-    private final MultiMap<N, Edge<N>> outEdges;
+    private final MultiMap<N, CFGEdge<N>> outEdges;
 
     AbstractCFG(IR ir) {
         this.ir = ir;
@@ -102,16 +102,16 @@ abstract class AbstractCFG<N> implements CFG<N> {
         nodes.add(node);
     }
 
-    void addEdge(Edge<N> edge) {
-        Edge<N> existingEdge;
+    void addEdge(CFGEdge<N> edge) {
+        CFGEdge<N> existingEdge;
         if (edge.isExceptional() &&
                 (existingEdge = getExistingEdge(edge)) != null) {
             // Merge exceptional edges with the same kind, source, and target
             ((ExceptionalEdge<N>) existingEdge).addExceptions(
                     edge.getExceptions());
         } else {
-            inEdges.put(edge.getTarget(), edge);
-            outEdges.put(edge.getSource(), edge);
+            inEdges.put(edge.target(), edge);
+            outEdges.put(edge.source(), edge);
         }
     }
 
@@ -121,9 +121,9 @@ abstract class AbstractCFG<N> implements CFG<N> {
      * otherwise returns null.
      */
     @Nullable
-    private Edge<N> getExistingEdge(Edge<N> edge) {
-        for (Edge<N> outEdge : outEdges.get(edge.getSource())) {
-            if (outEdge.getTarget().equals(edge.getTarget()) &&
+    private CFGEdge<N> getExistingEdge(CFGEdge<N> edge) {
+        for (CFGEdge<N> outEdge : outEdges.get(edge.source())) {
+            if (outEdge.target().equals(edge.target()) &&
                     outEdge.getKind() == edge.getKind()) {
                 return outEdge;
             }
@@ -132,33 +132,23 @@ abstract class AbstractCFG<N> implements CFG<N> {
     }
 
     @Override
-    public Set<Edge<N>> getInEdgesOf(N node) {
+    public Set<CFGEdge<N>> getInEdgesOf(N node) {
         return inEdges.get(node);
     }
 
     @Override
-    public Set<Edge<N>> getOutEdgesOf(N node) {
+    public Set<CFGEdge<N>> getOutEdgesOf(N node) {
         return outEdges.get(node);
     }
 
     @Override
-    public boolean hasNode(N node) {
-        return nodes.contains(node);
-    }
-
-    @Override
-    public boolean hasEdge(N source, N target) {
-        return getSuccsOf(source).contains(target);
-    }
-
-    @Override
     public Set<N> getPredsOf(N node) {
-        return Views.toMappedSet(getInEdgesOf(node), Edge::getSource);
+        return Views.toMappedSet(getInEdgesOf(node), CFGEdge::source);
     }
 
     @Override
     public Set<N> getSuccsOf(N node) {
-        return Views.toMappedSet(getOutEdgesOf(node), Edge::getTarget);
+        return Views.toMappedSet(getOutEdgesOf(node), CFGEdge::target);
     }
 
     @Override

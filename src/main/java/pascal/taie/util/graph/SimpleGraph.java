@@ -30,7 +30,7 @@ import java.util.Collections;
 import java.util.Set;
 
 /**
- * A simple map-based implementation of {@link Graph<N>}.
+ * A simple map-based implementation of {@link Graph}.
  *
  * @param <N> type of nodes
  */
@@ -41,6 +41,25 @@ public class SimpleGraph<N> implements Graph<N> {
     private final MultiMap<N, N> preds = Maps.newMultiMap();
 
     private final MultiMap<N, N> succs = Maps.newMultiMap();
+
+    /**
+     * Constructs an empty graph.
+     */
+    public SimpleGraph() {
+    }
+
+    /**
+     * Constructs a new graph containing the same node and edge sets
+     * as the specified graph.
+     */
+    public SimpleGraph(Graph<N> graph) {
+        for (N node : graph) {
+            addNode(node);
+            for (N succ : graph.getSuccsOf(node)) {
+                addEdge(node, succ);
+            }
+        }
+    }
 
     public void addNode(N node) {
         nodes.add(node);
@@ -53,14 +72,22 @@ public class SimpleGraph<N> implements Graph<N> {
         succs.put(source, target);
     }
 
-    @Override
-    public boolean hasNode(N node) {
-        return nodes.contains(node);
+    /**
+     * Removes a node from this graph.
+     * All edges from/to the node will also be removed.
+     */
+    public void removeNode(N node) {
+        nodes.remove(node);
+        preds.removeAll(node);
+        succs.removeAll(node);
     }
 
-    @Override
-    public boolean hasEdge(N source, N target) {
-        return succs.get(source).contains(target);
+    /**
+     * Removes an edge from this graph.
+     */
+    public void removeEdge(N source, N target) {
+        preds.remove(target, source);
+        succs.remove(source, target);
     }
 
     @Override

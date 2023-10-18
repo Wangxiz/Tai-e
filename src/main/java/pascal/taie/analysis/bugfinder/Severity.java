@@ -30,10 +30,19 @@ public enum Severity {
     MINOR("Low", "Low");
 
     private final String impact;
+
     private final String likelihood;
 
     Severity(String impact, String likelihood) {
         this.impact = impact;
         this.likelihood = likelihood;
+    }
+
+    public String getImpact() {
+        return impact;
+    }
+
+    public String getLikelihood() {
+        return likelihood;
     }
 }

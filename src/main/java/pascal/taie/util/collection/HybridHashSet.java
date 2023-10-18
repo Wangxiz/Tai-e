@@ -22,6 +22,7 @@
 
 package pascal.taie.util.collection;
 
+import java.io.Serializable;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
@@ -29,7 +30,8 @@ import java.util.Set;
 /**
  * Hybrid set that uses hash set for large set.
  */
-public final class HybridHashSet<E> extends AbstractHybridSet<E> {
+public final class HybridHashSet<E> extends AbstractHybridSet<E>
+        implements Serializable {
 
     /**
      * Constructs a new hybrid set.

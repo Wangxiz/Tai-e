@@ -175,8 +175,6 @@ import soot.jimple.XorExpr;
 import soot.util.Chain;
 
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -215,7 +213,7 @@ class MethodIRBuilder extends AbstractStmtSwitch<Void> {
         if (method.getReturnType().equals(VOID)) {
             returnVars = Set.of();
         } else {
-            returnVars = new LinkedHashSet<>();
+            returnVars = Sets.newLinkedSet();
         }
         stmts = new ArrayList<>();
         if (!method.isStatic()) {
@@ -248,7 +246,7 @@ class MethodIRBuilder extends AbstractStmtSwitch<Void> {
                 trapUnits.add(trap.getEndUnit());
                 trapUnits.add(findRealHandler(body, trap.getHandlerUnit()));
             });
-            trapUnitMap = new HashMap<>(body.getTraps().size() * 3);
+            trapUnitMap = Maps.newMap(body.getTraps().size() * 3);
         }
         body.getUnits().forEach(unit -> unit.apply(this));
         linkJumpTargets(jumpMap, jumpTargetMap);
@@ -360,7 +358,7 @@ class MethodIRBuilder extends AbstractStmtSwitch<Void> {
      * In Tai-e IR, above code will be converted to this:
      * if a > b goto label1;
      * label1:
-     * %intconst0 = 1; // <-- tempTarget
+     * %intconst0 = 1; // &lt;-- tempTarget
      * x = %intconst0 + y;
      * <p>
      * Tai-e adds an {@link AssignLiteral} statement before the
@@ -938,9 +936,8 @@ class MethodIRBuilder extends AbstractStmtSwitch<Void> {
     }
 
     private void buildInvoke(Local lhs, InvokeExpr invokeExpr) {
-        Var result = (lhs == null ||
-                // remove unused temp variables that receive invoke result
-                unusedInvokeTempRets.contains(lhs))
+        Var result = (lhs == null // remove unused temp variables that receive invoke result
+                || unusedInvokeTempRets.contains(lhs))
                 ? null : getVar(lhs);
         InvokeExp invokeExp = getInvokeExp(invokeExpr);
         Invoke invoke = new Invoke(method, invokeExp, result);

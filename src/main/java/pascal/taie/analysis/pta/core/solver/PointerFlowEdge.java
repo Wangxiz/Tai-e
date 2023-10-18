@@ -22,68 +22,69 @@
 
 package pascal.taie.analysis.pta.core.solver;
 
+import pascal.taie.analysis.graph.flowgraph.FlowKind;
 import pascal.taie.analysis.pta.core.cs.element.Pointer;
 import pascal.taie.util.Hashes;
-import pascal.taie.util.graph.AbstractEdge;
+import pascal.taie.util.collection.Sets;
+import pascal.taie.util.graph.Edge;
 
-public class PointerFlowEdge extends AbstractEdge<Pointer> {
+import java.util.Set;
 
-    private final Kind kind;
+public class PointerFlowEdge implements Edge<Pointer> {
 
-    /**
-     * Transfer function on this edge.
-     */
-    private final Transfer transfer;
+    private final FlowKind kind;
 
-    public PointerFlowEdge(Kind kind, Pointer source, Pointer target, Transfer transfer) {
-        super(source, target);
+    private final Pointer source;
+
+    private final Pointer target;
+
+    private final Set<Transfer> transfers = Sets.newHybridSet();
+
+    public PointerFlowEdge(FlowKind kind, Pointer source, Pointer target) {
         this.kind = kind;
-        this.transfer = transfer;
+        this.source = source;
+        this.target = target;
     }
 
-    public Kind getKind() {
+    public FlowKind kind() {
         return kind;
     }
 
-    public Transfer getTransfer() {
-        return transfer;
+    public Pointer source() {
+        return source;
     }
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        PointerFlowEdge that = (PointerFlowEdge) o;
-        return kind == that.kind &&
-                source.equals(that.source) &&
-                target.equals(that.target) &&
-                transfer.equals(that.transfer);
+    public Pointer target() {
+        return target;
+    }
+
+    public boolean addTransfer(Transfer transfer) {
+        return transfers.add(transfer);
+    }
+
+    public Set<Transfer> getTransfers() {
+        return transfers;
     }
 
     @Override
     public int hashCode() {
-        return Hashes.safeHash(kind, source, target, transfer);
+        return Hashes.hash(source, target);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        PointerFlowEdge that = (PointerFlowEdge) o;
+        return source.equals(that.source) && target.equals(that.target);
     }
 
     @Override
     public String toString() {
         return "[" + kind + "]" + source + " -> " + target;
-    }
-
-    public enum Kind {
-        LOCAL_ASSIGN,
-        CAST,
-
-        INSTANCE_LOAD,
-        INSTANCE_STORE,
-
-        ARRAY_LOAD,
-        ARRAY_STORE,
-
-        STATIC_LOAD,
-        STATIC_STORE,
-
-        PARAMETER_PASSING,
-        RETURN,
     }
 }

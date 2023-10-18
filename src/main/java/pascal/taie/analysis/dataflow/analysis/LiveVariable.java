@@ -25,7 +25,6 @@ package pascal.taie.analysis.dataflow.analysis;
 import pascal.taie.analysis.dataflow.fact.SetFact;
 import pascal.taie.analysis.graph.cfg.CFG;
 import pascal.taie.config.AnalysisConfig;
-import pascal.taie.ir.LocalVarIndexer;
 import pascal.taie.ir.exp.Var;
 import pascal.taie.ir.stmt.Copy;
 import pascal.taie.ir.stmt.Stmt;
@@ -37,7 +36,7 @@ import pascal.taie.util.collection.IndexerBitSet;
  */
 public class LiveVariable extends AnalysisDriver<Stmt, SetFact<Var>> {
 
-    public static final String ID = "livevar";
+    public static final String ID = "live-var";
 
     public LiveVariable(AnalysisConfig config) {
         super(config);
@@ -63,7 +62,7 @@ public class LiveVariable extends AnalysisDriver<Stmt, SetFact<Var>> {
         private Analysis(CFG<Stmt> cfg, boolean strongly) {
             super(cfg);
             this.strongly = strongly;
-            this.varIndexer = new LocalVarIndexer(cfg.getIR());
+            this.varIndexer = cfg.getIR().getVarIndexer();
         }
 
         @Override

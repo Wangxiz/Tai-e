@@ -27,9 +27,11 @@ import pascal.taie.ir.IR;
 import pascal.taie.ir.proginfo.MethodRef;
 import pascal.taie.language.annotation.Annotation;
 import pascal.taie.language.annotation.AnnotationHolder;
+import pascal.taie.language.generics.MethodGSignature;
 import pascal.taie.language.type.ClassType;
 import pascal.taie.language.type.Type;
 import pascal.taie.util.AnalysisException;
+import pascal.taie.util.Experimental;
 
 import javax.annotation.Nullable;
 import java.util.Collection;
@@ -52,6 +54,10 @@ public class JMethod extends ClassMember {
     private final Subsignature subsignature;
 
     @Nullable
+    @Experimental
+    private final MethodGSignature gSignature;
+
+    @Nullable
     private final List<AnnotationHolder> paramAnnotations;
 
     @Nullable
@@ -60,13 +66,21 @@ public class JMethod extends ClassMember {
     /**
      * Source of the body (and/or other information) of this method.
      * IRBuilder can use this to build method IR.
+     * <br>
+     * Notes: This field is {@code transient} because it is not serializable.
      */
-    private final Object methodSource;
+    private final transient Object methodSource;
 
-    private IR ir;
+    /**
+     * Notes: This field is {@code transient} because it is serialized separately.
+     *
+     * @see pascal.taie.frontend.cache.CachedIRBuilder
+     */
+    private transient IR ir;
 
     public JMethod(JClass declaringClass, String name, Set<Modifier> modifiers,
                    List<Type> paramTypes, Type returnType, List<ClassType> exceptions,
+                   @Nullable MethodGSignature gSignature,
                    AnnotationHolder annotationHolder,
                    @Nullable List<AnnotationHolder> paramAnnotations,
                    @Nullable List<String> paramNames,
@@ -77,6 +91,7 @@ public class JMethod extends ClassMember {
         this.exceptions = List.copyOf(exceptions);
         this.signature = StringReps.getSignatureOf(this);
         this.subsignature = Subsignature.get(name, paramTypes, returnType);
+        this.gSignature = gSignature;
         this.paramAnnotations = paramAnnotations;
         this.paramNames = paramNames;
         this.methodSource = methodSource;
@@ -153,6 +168,12 @@ public class JMethod extends ClassMember {
 
     public Subsignature getSubsignature() {
         return subsignature;
+    }
+
+    @Nullable
+    @Experimental
+    public MethodGSignature getGSignature() {
+        return gSignature;
     }
 
     public Object getMethodSource() {

@@ -26,16 +26,17 @@ import pascal.taie.ir.exp.RValue;
 import pascal.taie.ir.exp.Var;
 
 import javax.annotation.Nullable;
-import java.util.List;
+import java.util.Set;
 
 /**
  * Representation of return statement, e.g., return; or return x.
  */
 public class Return extends AbstractStmt {
 
+    @Nullable
     private final Var value;
 
-    public Return(Var value) {
+    public Return(@Nullable Var value) {
         this.value = value;
     }
 
@@ -49,8 +50,8 @@ public class Return extends AbstractStmt {
     }
 
     @Override
-    public List<RValue> getUses() {
-        return value != null ? List.of(value) : List.of();
+    public Set<RValue> getUses() {
+        return value != null ? Set.of(value) : Set.of();
     }
 
     @Override

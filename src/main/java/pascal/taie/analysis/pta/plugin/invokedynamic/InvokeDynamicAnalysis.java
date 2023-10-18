@@ -24,6 +24,7 @@ package pascal.taie.analysis.pta.plugin.invokedynamic;
 
 import pascal.taie.World;
 import pascal.taie.analysis.graph.callgraph.Edge;
+import pascal.taie.analysis.graph.flowgraph.FlowKind;
 import pascal.taie.analysis.pta.core.cs.context.Context;
 import pascal.taie.analysis.pta.core.cs.element.CSCallSite;
 import pascal.taie.analysis.pta.core.cs.element.CSManager;
@@ -31,9 +32,9 @@ import pascal.taie.analysis.pta.core.cs.element.CSMethod;
 import pascal.taie.analysis.pta.core.cs.element.CSObj;
 import pascal.taie.analysis.pta.core.cs.element.CSVar;
 import pascal.taie.analysis.pta.core.cs.selector.ContextSelector;
+import pascal.taie.analysis.pta.core.heap.Descriptor;
 import pascal.taie.analysis.pta.core.heap.HeapModel;
 import pascal.taie.analysis.pta.core.heap.Obj;
-import pascal.taie.analysis.pta.core.solver.PointerFlowEdge;
 import pascal.taie.analysis.pta.core.solver.Solver;
 import pascal.taie.analysis.pta.plugin.Plugin;
 import pascal.taie.analysis.pta.plugin.util.CSObjs;
@@ -50,6 +51,7 @@ import pascal.taie.ir.exp.StringLiteral;
 import pascal.taie.ir.exp.Var;
 import pascal.taie.ir.proginfo.MethodRef;
 import pascal.taie.ir.stmt.Invoke;
+import pascal.taie.ir.stmt.Stmt;
 import pascal.taie.language.classes.ClassHierarchy;
 import pascal.taie.language.classes.JMethod;
 import pascal.taie.language.classes.MethodNames;
@@ -71,11 +73,6 @@ import static pascal.taie.language.classes.ClassNames.LOOKUP;
 import static pascal.taie.language.classes.ClassNames.METHOD_HANDLE;
 
 public class InvokeDynamicAnalysis implements Plugin {
-
-    /**
-     * Whether analyzes lambda-related invokedynamic
-     */
-    private static final boolean processLambdas = true;
 
     private Solver solver;
 
@@ -146,7 +143,7 @@ public class InvokeDynamicAnalysis implements Plugin {
     /**
      * Description for MethodHandles.Lookup objects.
      */
-    private static final String LOOKUP_DESC = "MethodHandlesLookupObj";
+    private static final Descriptor LOOKUP_DESC = () -> "MethodHandlesLookupObj";
 
     /**
      * Map from class type to corresponding Method.Lookup object.
@@ -182,8 +179,8 @@ public class InvokeDynamicAnalysis implements Plugin {
     }
 
     @Override
-    public void onNewMethod(JMethod method) {
-        method.getIR().invokes(true).forEach(invoke -> {
+    public void onNewStmt(Stmt stmt, JMethod container) {
+        if (stmt instanceof Invoke invoke) {
             if (!invoke.isDynamic()) {
                 methodTypeModel.handleNewInvoke(invoke);
                 lookupModel.handleNewInvoke(invoke);
@@ -192,7 +189,7 @@ public class InvokeDynamicAnalysis implements Plugin {
             if (indy != null) {
                 // if new reachable method contains invokedynamic,
                 // then we record necessary information
-                method2indys.put(method, invoke);
+                method2indys.put(container, invoke);
                 JMethod bsm = indy.getBootstrapMethodRef().resolve();
                 // we associate the variables in bootstrap method to
                 // the invokedynamic, where the variables may point to
@@ -204,14 +201,17 @@ public class InvokeDynamicAnalysis implements Plugin {
                 // add call edge to BSM
                 addBSMCallEdge(invoke, bsm);
             }
-        });
+        }
     }
 
     @Nullable
     private static InvokeDynamic getInvokeDynamic(Invoke invoke) {
         InvokeExp invokeExp = invoke.getInvokeExp();
         if (invokeExp instanceof InvokeDynamic) {
-            if (processLambdas || !LambdaAnalysis.isLambdaMetaFactory(invoke)) {
+            if (!LambdaAnalysis.isLambdaMetaFactory(invoke) &&
+                    !Java9StringConcatHandler.isStringConcatFactoryMake(invoke)) {
+                // ignore lambda functions and string concat which
+                // will be handled by specific plugins
                 return (InvokeDynamic) invokeExp;
             }
         }
@@ -284,10 +284,9 @@ public class InvokeDynamicAnalysis implements Plugin {
                  i < indy.getBootstrapArgs().size() && j < ir.getParams().size();
                  ++i, ++j) {
                 Literal arg = indy.getBootstrapArgs().get(i);
-                if (arg instanceof ReferenceLiteral) {
-                    CSObj argObj = csManager.getCSObj(defContext,
-                            heapModel.getConstantObj((ReferenceLiteral) arg));
-                    solver.addVarPointsTo(context, ir.getParam(j), argObj);
+                if (arg instanceof ReferenceLiteral argLiteral) {
+                    Obj argObj = heapModel.getConstantObj(argLiteral);
+                    solver.addVarPointsTo(context, ir.getParam(j), defContext, argObj);
                 }
             }
             // TODO: mock array for varargs
@@ -315,7 +314,7 @@ public class InvokeDynamicAnalysis implements Plugin {
                 solver.addPFGEdge(
                         csManager.getCSVar(callerCtx, args.get(i)),
                         csManager.getCSVar(calleeCtx, params.get(j)),
-                        PointerFlowEdge.Kind.PARAMETER_PASSING);
+                        FlowKind.PARAMETER_PASSING);
             }
             // pass return values
             Var result = caller.getResult();
@@ -323,7 +322,7 @@ public class InvokeDynamicAnalysis implements Plugin {
                 CSVar csResult = csManager.getCSVar(callerCtx, result);
                 callee.getIR().getReturnVars().forEach(ret -> {
                     CSVar csRet = csManager.getCSVar(calleeCtx, ret);
-                    solver.addPFGEdge(csRet, csResult, PointerFlowEdge.Kind.RETURN);
+                    solver.addPFGEdge(csRet, csResult, FlowKind.RETURN);
                 });
             }
         }

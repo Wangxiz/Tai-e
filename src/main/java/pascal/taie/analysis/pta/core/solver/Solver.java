@@ -24,6 +24,7 @@ package pascal.taie.analysis.pta.core.solver;
 
 import pascal.taie.analysis.graph.callgraph.CallGraph;
 import pascal.taie.analysis.graph.callgraph.Edge;
+import pascal.taie.analysis.graph.flowgraph.FlowKind;
 import pascal.taie.analysis.pta.PointerAnalysisResult;
 import pascal.taie.analysis.pta.core.cs.context.Context;
 import pascal.taie.analysis.pta.core.cs.element.CSCallSite;
@@ -46,6 +47,7 @@ import pascal.taie.language.type.Type;
 import pascal.taie.language.type.TypeSystem;
 
 import java.util.Collection;
+import java.util.function.Predicate;
 
 public interface Solver {
 
@@ -96,6 +98,14 @@ public interface Solver {
 
     void addPointsTo(Pointer pointer, Context heapContext, Obj obj);
 
+    /**
+     * Convenient API to add points-to relation for object
+     * with empty heap context.
+     */
+    default void addPointsTo(Pointer pointer, Obj obj) {
+        addPointsTo(pointer, getContextSelector().getEmptyContext(), obj);
+    }
+
     // convenient APIs for adding var-points-to relations
     void addVarPointsTo(Context context, Var var, PointsToSet pts);
 
@@ -104,9 +114,25 @@ public interface Solver {
     void addVarPointsTo(Context context, Var var, Context heapContext, Obj obj);
 
     /**
+     * Convenient API to add var points-to relation for object
+     * with empty heap context.
+     */
+    default void addVarPointsTo(Context context, Var var, Obj obj) {
+        addVarPointsTo(context, var, getContextSelector().getEmptyContext(), obj);
+    }
+
+    /**
+     * Adds an object filter to given pointer.
+     * Note that the filter works only after it is added to the pointer,
+     * and it cannot filter out the objects pointed to by the pointer
+     * before it is added.
+     */
+    void addPointerFilter(Pointer pointer, Predicate<CSObj> filter);
+
+    /**
      * Adds an edge "source -> target" to the PFG.
      */
-    default void addPFGEdge(Pointer source, Pointer target, PointerFlowEdge.Kind kind) {
+    default void addPFGEdge(Pointer source, Pointer target, FlowKind kind) {
         addPFGEdge(source, target, kind, Identity.get());
     }
 
@@ -115,14 +141,20 @@ public interface Solver {
      * For the objects pointed to by "source", only the ones whose types
      * are subtypes of given type are propagated to "target".
      */
-    default void addPFGEdge(Pointer source, Pointer target, PointerFlowEdge.Kind kind, Type type) {
+    default void addPFGEdge(Pointer source, Pointer target, FlowKind kind, Type type) {
         addPFGEdge(source, target, kind, new TypeFilter(type, this));
     }
 
     /**
      * Adds an edge "source -> target" (with edge transfer) to the PFG.
      */
-    void addPFGEdge(Pointer source, Pointer target, PointerFlowEdge.Kind kind, Transfer transfer);
+    void addPFGEdge(Pointer source, Pointer target, FlowKind kind, Transfer transfer);
+
+    /**
+     * Adds an entry point.
+     * Notes that the method in entry point will be set as an entry in {@link CallGraph}
+     */
+    void addEntryPoint(EntryPoint entryPoint);
 
     /**
      * Adds a call edge.
@@ -139,30 +171,12 @@ public interface Solver {
     void addCSMethod(CSMethod csMethod);
 
     /**
-     * Adds an entry method. <br>
-     * The parameter of the entry method can be set up by the {@link #addVarPointsTo} method. <br>
-     *
-     * @param entryMethod added entry method.
-     * @see #addVarPointsTo(Context, Var, CSObj)
-     * @see #addVarPointsTo(Context, Var, PointsToSet)
-     * @see #addVarPointsTo(Context, Var, Context, Obj)
-     */
-    void addEntryMethod(CSMethod entryMethod);
-
-    /**
      * Adds stmts to the analyzed program. Solver will process given stmts.
      *
      * @param csMethod the container method of the stmts
      * @param stmts    the added stmts
      */
     void addStmts(CSMethod csMethod, Collection<Stmt> stmts);
-
-    /**
-     * Analyzes the static initializer (i.e., <clinit>) of given class.
-     *
-     * @param cls the class to be initialized.
-     */
-    void initializeClass(JClass cls);
 
     /**
      * If a plugin takes over the analysis of a method, and wants this solver
@@ -177,6 +191,12 @@ public interface Solver {
      */
     void addIgnoredMethod(JMethod method);
 
+    /**
+     * Analyzes the static initializer (i.e., &lt;clinit&gt;) of given class.
+     *
+     * @param cls the class to be initialized.
+     */
+    void initializeClass(JClass cls);
     // ---------- side-effect APIs (end) ----------
 
     /**
